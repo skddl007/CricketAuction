@@ -92,15 +92,49 @@ class Recommender:
         limit: int = 10
     ) -> List[Dict[str, Any]]:
         """Get recommendations for a specific team."""
-        recommendations = []
+        print(f"[RECOMMENDER] recommend_for_team called")
+        print(f"[RECOMMENDER] Team: {team.name if team else 'None'}")
+        print(f"[RECOMMENDER] Available players: {len(available_players)}")
+        print(f"[RECOMMENDER] Limit: {limit}")
+        print(f"[RECOMMENDER] TeamMatcher exists: {self.team_matcher is not None}")
         
-        for player in available_players:
-            match_result = self.team_matcher.match_player_to_team(player, team)
-            if not match_result.get('error'):
-                recommendations.append(match_result)
+        if not self.team_matcher:
+            print("[RECOMMENDER] ERROR: TeamMatcher is None!")
+            return []
+        
+        recommendations = []
+        processed = 0
+        errors = 0
+        
+        for i, player in enumerate(available_players):
+            if i % 10 == 0:
+                print(f"[RECOMMENDER] Processing player {i+1}/{len(available_players)}: {player.name}")
+            
+            try:
+                match_result = self.team_matcher.match_player_to_team(player, team)
+                processed += 1
+                
+                if match_result.get('error'):
+                    errors += 1
+                    if errors <= 3:  # Only log first few errors
+                        print(f"[RECOMMENDER] Error matching {player.name}: {match_result.get('error')}")
+                else:
+                    recommendations.append(match_result)
+            except Exception as e:
+                errors += 1
+                print(f"[RECOMMENDER] Exception matching {player.name}: {str(e)}")
+        
+        print(f"[RECOMMENDER] Processed: {processed}, Errors: {errors}, Valid recommendations: {len(recommendations)}")
         
         # Sort by demand score
         recommendations.sort(key=lambda x: x.get('overall_demand_score', 0), reverse=True)
         
-        return recommendations[:limit]
+        result = recommendations[:limit]
+        print(f"[RECOMMENDER] Returning {len(result)} recommendations (top {limit})")
+        
+        if result:
+            top_score = result[0].get('overall_demand_score', 0)
+            print(f"[RECOMMENDER] Top recommendation score: {top_score}")
+        
+        return result
 

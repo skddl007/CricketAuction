@@ -117,15 +117,40 @@ class PlayerGrouper:
         limit_per_group: int = 5
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Get grouped recommendations for a team."""
+        print(f"[PLAYER_GROUPER] get_grouped_recommendations called")
+        print(f"[PLAYER_GROUPER] Team: {team.name if team else 'None'}")
+        print(f"[PLAYER_GROUPER] Available players: {len(available_players)}")
+        print(f"[PLAYER_GROUPER] Limit per group: {limit_per_group}")
+        print(f"[PLAYER_GROUPER] Recommender exists: {self.recommender is not None}")
+        
+        if not self.recommender:
+            print("[PLAYER_GROUPER] ERROR: Recommender is None!")
+            return {'A': [], 'B': [], 'C': []}
+        
         # Get recommendations
+        print("[PLAYER_GROUPER] Getting recommendations from recommender...")
         recommendations = self.recommender.recommend_for_team(team, available_players, limit=30)
+        print(f"[PLAYER_GROUPER] Received {len(recommendations)} recommendations")
+        
+        if not recommendations:
+            print("[PLAYER_GROUPER] WARNING: No recommendations received!")
+            return {'A': [], 'B': [], 'C': []}
         
         # Group them
+        print("[PLAYER_GROUPER] Grouping recommendations...")
         groups = self.group_players(team, recommendations)
+        print(f"[PLAYER_GROUPER] Groups created: {list(groups.keys())}")
+        for group_name, group_data in groups.items():
+            count = len(group_data) if isinstance(group_data, list) else 0
+            print(f"[PLAYER_GROUPER]   Group {group_name}: {count} items before limiting")
         
         # Limit each group
         for group_name in groups:
             groups[group_name] = groups[group_name][:limit_per_group]
+            print(f"[PLAYER_GROUPER]   Group {group_name}: {len(groups[group_name])} items after limiting")
+        
+        total = sum(len(g) if isinstance(g, list) else 0 for g in groups.values())
+        print(f"[PLAYER_GROUPER] Total recommendations in groups: {total}")
         
         return groups
 

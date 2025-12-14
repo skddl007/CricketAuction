@@ -11,6 +11,11 @@ from output.matrix_generator import MatrixGenerator
 from handlers.team_selection_handler import TeamSelectionHandler
 from handlers.live_bid_handler import LiveBidHandler
 from utils import parse_price_string, normalize_team_name
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 # Pydantic models
@@ -64,12 +69,24 @@ def initialize_handlers(
     global state_manager, recommender, player_grouper, matrix_generator
     global team_selection_handler, live_bid_handler
     
+    print("=" * 60)
+    print("[API_HANDLER] Initializing handlers...")
+    print(f"[API_HANDLER] StateManager: {sm is not None}")
+    print(f"[API_HANDLER] Recommender: {rec is not None}")
+    print(f"[API_HANDLER] PlayerGrouper: {pg is not None}")
+    print(f"[API_HANDLER] MatrixGenerator: {mg is not None}")
+    
     state_manager = sm
     recommender = rec
     player_grouper = pg
     matrix_generator = mg
     team_selection_handler = TeamSelectionHandler(sm, rec, pg)
     live_bid_handler = LiveBidHandler(sm, rec, pg)
+    
+    print(f"[API_HANDLER] TeamSelectionHandler: {team_selection_handler is not None}")
+    print(f"[API_HANDLER] LiveBidHandler: {live_bid_handler is not None}")
+    print("[API_HANDLER] Handlers initialized successfully!")
+    print("=" * 60)
 
 
 def set_components(comps: Dict[str, Any]):
@@ -115,25 +132,42 @@ async def get_team_matrix(team: str):
 @app.get("/teams/{team}/recommendations")
 async def get_team_recommendations(team: str, group: Optional[str] = None):
     """Get grouped recommendations for a team (includes gap analysis first)."""
+    print("\n" + "=" * 60)
+    print(f"[API] GET /teams/{team}/recommendations")
+    print(f"[API] Group filter: {group}")
+    print(f"[API] TeamSelectionHandler exists: {team_selection_handler is not None}")
+    print(f"[API] StateManager exists: {state_manager is not None}")
+    
     if not team_selection_handler or not state_manager:
+        print("[API] ERROR: Handler not initialized!")
         raise HTTPException(status_code=500, detail="Handler not initialized")
     
     from core.playing11_analyzer import Playing11Analyzer
     
     team_name = normalize_team_name(team)
+    print(f"[API] Normalized team name: {team_name}")
+    
     team_obj = state_manager.get_team(team_name)
+    print(f"[API] Team object found: {team_obj is not None}")
     
     if not team_obj:
+        print(f"[API] ERROR: Team {team_name} not found")
         raise HTTPException(status_code=404, detail=f"Team {team_name} not found")
     
     # First, analyze gaps and weak points
+    print("[API] Analyzing team gaps...")
     analyzer = Playing11Analyzer()
     gap_analysis = analyzer.analyze_team(team_obj)
+    print(f"[API] Gap analysis complete. Total gaps: {gap_analysis.get('gaps', {}).get('total_gaps', 0)}")
     
     # Then get recommendations
+    print("[API] Getting team recommendations...")
     result = team_selection_handler.get_team_recommendations(team, filter_group=group)
+    print(f"[API] Recommendations result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+    print(f"[API] Result has error: {result.get('error') if isinstance(result, dict) else 'N/A'}")
     
     if result.get('error'):
+        print(f"[API] ERROR in result: {result['error']}")
         raise HTTPException(status_code=404, detail=result['error'])
     
     # Add gap analysis to result
@@ -149,6 +183,17 @@ async def get_team_recommendations(team: str, group: Optional[str] = None):
         ],
         'total_gaps': gap_analysis['gaps'].get('total_gaps', 0)
     }
+    
+    # Log result summary
+    if isinstance(result, dict) and 'groups' in result:
+        groups = result.get('groups', {})
+        print(f"[API] Groups returned: {list(groups.keys())}")
+        for group_name, group_data in groups.items():
+            count = len(group_data) if isinstance(group_data, list) else 0
+            print(f"[API]   Group {group_name}: {count} recommendations")
+    
+    print(f"[API] Returning result with {len(result)} keys")
+    print("=" * 60 + "\n")
     
     return result
 
@@ -244,7 +289,14 @@ async def get_team_weak_points(team: str):
 @app.post("/chat")
 async def chat_with_recommender(request: ChatRequest):
     """Chat with the recommender system."""
+    print("\n" + "=" * 60)
+    print(f"[API] POST /chat")
+    print(f"[API] Message: {request.message[:100]}..." if len(request.message) > 100 else f"[API] Message: {request.message}")
+    print(f"[API] Team name: {request.team_name}")
+    print(f"[API] Components exists: {components is not None}")
+    
     if not components:
+        print("[API] ERROR: System components not initialized!")
         raise HTTPException(status_code=500, detail="System components not initialized")
     
     from llm.gemini_client import GeminiClient
@@ -252,26 +304,36 @@ async def chat_with_recommender(request: ChatRequest):
     from core.playing11_analyzer import Playing11Analyzer
     
     gemini_client = components.get('gemini_client')
+    print(f"[API] GeminiClient exists: {gemini_client is not None}")
+    
     if not gemini_client:
+        print("[API] ERROR: Gemini client not available!")
         raise HTTPException(
             status_code=503, 
             detail="LLM features not available. GEMINI_API_KEY required."
         )
     
+    print("[API] Loading prompt...")
     prompt_loader = PromptLoader()
     system_prompt = prompt_loader.get_full_context()
+    print(f"[API] System prompt loaded: {len(system_prompt)} characters")
     
     # Build context based on request
     context_parts = []
     
     # If team specified, include team analysis
     if request.team_name:
+        print(f"[API] Processing team context for: {request.team_name}")
         team_name = normalize_team_name(request.team_name)
         team = state_manager.get_team(team_name) if state_manager else None
+        print(f"[API] StateManager exists: {state_manager is not None}")
+        print(f"[API] Team found: {team is not None}")
         
         if team:
+            print("[API] Analyzing team...")
             analyzer = Playing11Analyzer()
             team_analysis = analyzer.analyze_team(team)
+            print(f"[API] Team analysis complete. Weak points: {len(team_analysis.get('weak_points', []))}")
             
             context_parts.append(f"Team: {team_name}")
             context_parts.append(f"Purse Available: {team_analysis.get('purse_available_cr', 0):.2f} Cr")
@@ -287,12 +349,17 @@ async def chat_with_recommender(request: ChatRequest):
             for bp in team_analysis.get('bowling_phases', []):
                 if bp.get('status') == 'NotCheck':
                     context_parts.append(f"- {bp['phase']}: Need primary bowler")
+            print(f"[API] Context parts added: {len(context_parts)} items")
+        else:
+            print(f"[API] WARNING: Team {team_name} not found in state manager")
     
     # Add custom context if provided
     if request.context:
+        print(f"[API] Adding custom context: {request.context}")
         context_parts.append(f"\nAdditional Context: {request.context}")
     
     context_str = "\n".join(context_parts) if context_parts else ""
+    print(f"[API] Total context length: {len(context_str)} characters")
     
     # Build chat prompt
     chat_prompt = f"""{system_prompt}
@@ -312,14 +379,27 @@ You are an IPL auction strategist assistant. Help the user with:
 Provide clear, actionable advice based on the team's current state and requirements.
 """
     
+    print(f"[API] Total prompt length: {len(chat_prompt)} characters")
+    print("[API] Calling Gemini API...")
+    
     try:
         response = gemini_client.generate_content(chat_prompt)
+        print(f"[API] Gemini response received: {len(response) if response else 0} characters")
+        print(f"[API] Response preview: {response[:100] if response else 'None'}...")
         
-        return {
+        result = {
             "response": response,
             "team": request.team_name,
             "context_provided": bool(context_parts)
         }
+        print("[API] Chat response successful!")
+        print("=" * 60 + "\n")
+        return result
     except Exception as e:
+        print(f"[API] ERROR generating response: {str(e)}")
+        print(f"[API] Exception type: {type(e).__name__}")
+        import traceback
+        print(f"[API] Traceback: {traceback.format_exc()}")
+        print("=" * 60 + "\n")
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
 

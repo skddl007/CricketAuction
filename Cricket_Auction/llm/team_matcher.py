@@ -165,11 +165,20 @@ Quality Tier: [A or B]
         team: Team
     ) -> Dict[str, Any]:
         """Match a player to a team using LLM."""
+        if not self.client:
+            print(f"[TEAM_MATCHER] ERROR: Gemini client is None for {player.name} -> {team.name}")
+            return {
+                'player_name': player.name,
+                'team_name': team.name,
+                'overall_demand_score': 0,
+                'error': 'Gemini client not initialized'
+            }
+        
         # Get requirements
         requirements = self.requirements_generator.generate_requirements(team)
         
         # Get bias context
-        bias_context = self.bias_integrator.get_bias_context_for_llm(player.name, team.name)
+        bias_context = self.bias_integrator.get_bias_context_for_llm(player.name, team.name) if self.bias_integrator else ""
         
         # Create prompt
         prompt = self.create_matching_prompt(player, team, requirements, bias_context)
@@ -178,16 +187,25 @@ Quality Tier: [A or B]
             response = self.client.generate_content(prompt)
             match_result = self.parse_llm_response(response)
             
+            if not match_result:
+                print(f"[TEAM_MATCHER] WARNING: Empty match result for {player.name} -> {team.name}")
+                match_result = {}
+            
             # Add bias boost to demand score
             base_demand = match_result.get('overall_demand_score', 0)
-            adjusted_demand = self.bias_integrator.add_bias_to_demand_score(
-                base_demand,
-                player.name,
-                team.name
-            )
-            match_result['overall_demand_score'] = adjusted_demand
-            match_result['base_demand_score'] = base_demand
-            match_result['bias_boost'] = adjusted_demand - base_demand
+            if self.bias_integrator:
+                adjusted_demand = self.bias_integrator.add_bias_to_demand_score(
+                    base_demand,
+                    player.name,
+                    team.name
+                )
+                match_result['overall_demand_score'] = adjusted_demand
+                match_result['base_demand_score'] = base_demand
+                match_result['bias_boost'] = adjusted_demand - base_demand
+            else:
+                match_result['overall_demand_score'] = base_demand
+                match_result['base_demand_score'] = base_demand
+                match_result['bias_boost'] = 0
             
             # Add metadata
             match_result['player_name'] = player.name
@@ -201,7 +219,9 @@ Quality Tier: [A or B]
             
             return match_result
         except Exception as e:
-            print(f"Error matching {player.name} to {team.name}: {e}")
+            print(f"[TEAM_MATCHER] ERROR matching {player.name} to {team.name}: {e}")
+            import traceback
+            print(f"[TEAM_MATCHER] Traceback: {traceback.format_exc()}")
             return {
                 'player_name': player.name,
                 'team_name': team.name,

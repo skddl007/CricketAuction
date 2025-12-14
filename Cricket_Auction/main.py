@@ -112,7 +112,26 @@ def initialize_system():
     live_bid_handler = LiveBidHandler(state_manager, recommender, player_grouper) if recommender and player_grouper else None
     team_selection_handler = TeamSelectionHandler(state_manager, recommender, player_grouper) if recommender and player_grouper else None
     
+    print("\n" + "=" * 60)
+    print("SYSTEM INITIALIZATION SUMMARY")
+    print("=" * 60)
+    print(f"StateManager: {state_manager is not None}")
+    print(f"GeminiClient: {gemini_client is not None}")
+    print(f"Recommender: {recommender is not None}")
+    print(f"PlayerGrouper: {player_grouper is not None}")
+    print(f"TeamSelectionHandler: {team_selection_handler is not None}")
+    print(f"LiveBidHandler: {live_bid_handler is not None}")
+    
+    if state_manager:
+        teams = state_manager.get_all_teams()
+        available = state_manager.get_available_players()
+        print(f"Teams loaded: {len(teams)}")
+        print(f"Available players: {len(available)}")
+        print(f"Team names: {list(teams.keys())}")
+    
+    print("=" * 60)
     print("System initialized successfully!")
+    print("=" * 60 + "\n")
     
     return {
         'state_manager': state_manager,
@@ -162,48 +181,65 @@ def run_cli_mode(components):
 
 def run_server_mode(components):
     """Run server mode with FastAPI."""
-    import uvicorn
-    from handlers.api_handler import initialize_handlers
-    
-    # Initialize API handlers
+    # Server is intended to be run via an ASGI server (uvicorn/gunicorn).
+    # When running programmatically (python main.py) the `__main__` block
+    # will start a uvicorn server. When using `uvicorn main:app`, the
+    # FastAPI `startup` event will initialize the system automatically.
+    print("Server mode selected. Use an ASGI server to run the app (uvicorn main:app ...)")
+    print(f"Server will run on http://{API_HOST}:{API_PORT} when started by an ASGI server")
+
+
+def main():
+    """Main entry point."""
+    import sys
+    # When called directly (python main.py) initialize system and either
+    # run CLI or start an ASGI server. When used as an import target for
+    # an ASGI server (uvicorn main:app) this function should not be
+    # invoked by the server; instead the FastAPI `startup` handler will
+    # perform initialization.
+
+    components = initialize_system()
+
+    # Initialize API handlers so the app is ready when run directly
+    from handlers.api_handler import initialize_handlers, set_components
     initialize_handlers(
         components['state_manager'],
         components['recommender'],
         components['player_grouper'],
         components['matrix_generator']
     )
-    
-    # Store components globally for chat handler
-    from handlers.api_handler import set_components
     set_components(components)
-    
-    print(f"\n=== Starting IPL Auction Strategist Server ===")
-    print(f"Server will run on http://{API_HOST}:{API_PORT}")
-    print(f"API docs available at http://{API_HOST}:{API_PORT}/docs")
-    print(f"Press Ctrl+C to stop\n")
-    
-    uvicorn.run(
-        "handlers.api_handler:app",
-        host=API_HOST,
-        port=API_PORT,
-        reload=False
-    )
 
-
-def main():
-    """Main entry point."""
-    import sys
-    
-    # Initialize system
-    components = initialize_system()
-    
-    # Check if CLI mode is requested, otherwise run server mode by default
+    # CLI or programmatic server
     if len(sys.argv) > 1 and sys.argv[1] == '--cli':
-        # Run CLI mode
         run_cli_mode(components)
     else:
-        # Run server mode by default
-        run_server_mode(components)
+        # Start uvicorn programmatically when running as a script
+        import uvicorn
+        print(f"Starting uvicorn server on http://{API_HOST}:{API_PORT}")
+        uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=False)
+
+
+# Expose FastAPI app for ASGI servers and initialize on startup
+from handlers.api_handler import app as app
+
+
+@app.on_event("startup")
+async def _initialize_on_startup():
+    """Initialize system when ASGI server starts the app."""
+    try:
+        components = initialize_system()
+        from handlers.api_handler import initialize_handlers, set_components
+        initialize_handlers(
+            components['state_manager'],
+            components['recommender'],
+            components['player_grouper'],
+            components['matrix_generator']
+        )
+        set_components(components)
+    except Exception as e:
+        # Log any startup failure; raising will stop the ASGI server startup
+        print(f"Startup initialization failed: {e}")
 
 
 if __name__ == "__main__":
