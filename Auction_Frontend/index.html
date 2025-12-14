@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPL Auction Strategist - Home</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="header-container"></div>
+
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="hero-content reveal">
+                <h1 class="hero-title">
+                    <span class="typewriter-text">IPL Auction Strategist</span>
+                </h1>
+                <p class="hero-subtitle">
+                    AI-Powered Player Recommendations & Team Analysis for IPL Auctions
+                </p>
+                <div class="hero-cta">
+                    <a href="team-analysis.html" class="btn btn-primary">Get Started</a>
+                    <a href="services.html" class="btn btn-outline">View Services</a>
+                </div>
+            </div>
+            <div class="scroll-indicator">
+                <span>↓</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Overview -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title reveal">Features</h2>
+            <div class="grid grid-3">
+                <div class="card stagger-item">
+                    <div class="card-icon">📊</div>
+                    <h3 class="card-title">Team Analysis</h3>
+                    <p class="card-content">
+                        Comprehensive gap analysis and team matrix visualization to identify weak points and requirements.
+                    </p>
+                </div>
+                <div class="card stagger-item">
+                    <div class="card-icon">🎯</div>
+                    <h3 class="card-title">Live Recommendations</h3>
+                    <p class="card-content">
+                        Real-time player recommendations grouped by priority (A/B/C) for all teams during the auction.
+                    </p>
+                </div>
+                <div class="card stagger-item">
+                    <div class="card-icon">💬</div>
+                    <h3 class="card-title">AI Chat Assistant</h3>
+                    <p class="card-content">
+                        Interactive AI-powered chat to get instant answers about team strategies and player recommendations.
+                    </p>
+                </div>
+                <div class="card stagger-item">
+                    <div class="card-icon">🔍</div>
+                    <h3 class="card-title">Gap Analysis</h3>
+                    <p class="card-content">
+                        Detailed analysis of batting order gaps, bowling phase gaps, and team composition weaknesses.
+                    </p>
+                </div>
+                <div class="card stagger-item">
+                    <div class="card-icon">⚡</div>
+                    <h3 class="card-title">Live Auction Tracking</h3>
+                    <p class="card-content">
+                        Track player sales, update auction state, and get real-time recommendations as the auction progresses.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="section stats-section">
+        <div class="container">
+            <h2 class="section-title reveal">Auction Statistics</h2>
+            <div class="grid grid-4" id="stats-container">
+                <div class="stat-card stagger-item">
+                    <div class="stat-value" id="stat-teams">10</div>
+                    <div class="stat-label">Total Teams</div>
+                </div>
+                <div class="stat-card stagger-item">
+                    <div class="stat-value" id="stat-available">-</div>
+                    <div class="stat-label">Available Players</div>
+                </div>
+                <div class="stat-card stagger-item">
+                    <div class="stat-value" id="stat-sold">-</div>
+                    <div class="stat-label">Sold Players</div>
+                </div>
+                <div class="stat-card stagger-item">
+                    <div class="stat-value" id="stat-supply">-</div>
+                    <div class="stat-label">Supply Count</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title reveal">How It Works</h2>
+            <div class="timeline">
+                <div class="timeline-item reveal">
+                    <div class="timeline-number">1</div>
+                    <div class="timeline-content">
+                        <h3>Select Your Team</h3>
+                        <p>Choose from 10 IPL teams to analyze their current composition and requirements.</p>
+                    </div>
+                </div>
+                <div class="timeline-item reveal">
+                    <div class="timeline-number">2</div>
+                    <div class="timeline-content">
+                        <h3>Analyze Gaps</h3>
+                        <p>Get detailed gap analysis showing weak points in batting order, bowling phases, and team balance.</p>
+                    </div>
+                </div>
+                <div class="timeline-item reveal">
+                    <div class="timeline-number">3</div>
+                    <div class="timeline-content">
+                        <h3>Get Recommendations</h3>
+                        <p>Receive AI-powered player recommendations grouped by priority and match score.</p>
+                    </div>
+                </div>
+                <div class="timeline-item reveal">
+                    <div class="timeline-number">4</div>
+                    <div class="timeline-content">
+                        <h3>Make Decisions</h3>
+                        <p>Use insights to make informed bidding decisions during the live auction.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Team Showcase -->
+    <section class="section team-showcase">
+        <div class="container">
+            <h2 class="section-title reveal">IPL Teams</h2>
+            <div class="grid grid-4" id="teams-grid">
+                <!-- Teams will be loaded dynamically -->
+            </div>
+        </div>
+    </section>
+
+    <div id="footer-container"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/animations.js"></script>
+    <script>
+        // Load stats
+        async function loadStats() {
+            try {
+                const state = await API.getState();
+                document.getElementById('stat-available').textContent = state.available_players_count || '-';
+                document.getElementById('stat-sold').textContent = state.sold_players_count || '-';
+                document.getElementById('stat-supply').textContent = state.supply_count || '-';
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        // Load teams
+        const teams = ['CSK', 'RCB', 'MI', 'KKR', 'DC', 'GT', 'LSG', 'PBKS', 'RR', 'SRH'];
+        const teamsGrid = document.getElementById('teams-grid');
+        teams.forEach(team => {
+            const teamCard = document.createElement('div');
+            teamCard.className = 'card stagger-item team-card';
+            teamCard.innerHTML = `
+                <div class="team-logo">${team}</div>
+                <h3 class="team-name">${team}</h3>
+                <a href="team-analysis.html?team=${team}" class="btn btn-outline">Analyze</a>
+            `;
+            teamsGrid.appendChild(teamCard);
+        });
+
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .hero-section {
+                min-height: 90vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: linear-gradient(135deg, rgba(27, 94, 32, 0.85) 0%, rgba(13, 74, 16, 0.85) 100%),
+                            url('https://static.toiimg.com/thumb/msid-115341864,imgsize-2143655,width-400,resizemode-4/ipl-mega-auction.jpg') center/cover no-repeat;
+                color: white;
+                text-align: center;
+                position: relative;
+                overflow: hidden;
+            }
+            .hero-content {
+                z-index: 1;
+            }
+            .hero-title {
+                font-size: 3.5rem;
+                margin-bottom: 1rem;
+                color: white;
+            }
+            .hero-subtitle {
+                font-size: 1.25rem;
+                margin-bottom: 2rem;
+                opacity: 0.9;
+            }
+            .hero-cta {
+                display: flex;
+                gap: 1rem;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            .scroll-indicator {
+                position: absolute;
+                bottom: 30px;
+                left: 50%;
+                transform: translateX(-50%);
+                animation: bounce 2s infinite;
+                font-size: 2rem;
+            }
+            .card-icon {
+                font-size: 3rem;
+                margin-bottom: 1rem;
+            }
+            .stats-section {
+                background: var(--surface);
+            }
+            .stat-card {
+                text-align: center;
+                padding: 2rem;
+            }
+            .stat-value {
+                font-size: 3rem;
+                font-weight: 700;
+                color: var(--primary-color);
+                margin-bottom: 0.5rem;
+            }
+            .stat-label {
+                color: var(--text-secondary);
+                font-size: 1rem;
+            }
+            .timeline {
+                max-width: 800px;
+                margin: 0 auto;
+            }
+            .timeline-item {
+                display: flex;
+                gap: 2rem;
+                margin-bottom: 3rem;
+                align-items: flex-start;
+            }
+            .timeline-number {
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                background: var(--primary-color);
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.5rem;
+                font-weight: 700;
+                flex-shrink: 0;
+            }
+            .timeline-content h3 {
+                margin-bottom: 0.5rem;
+            }
+            .team-showcase {
+                background: var(--surface);
+            }
+            .team-card {
+                text-align: center;
+            }
+            .team-logo {
+                font-size: 4rem;
+                margin-bottom: 1rem;
+            }
+            .team-name {
+                margin-bottom: 1rem;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Load stats on page load
+        loadStats();
+    </script>
+</body>
+</html>

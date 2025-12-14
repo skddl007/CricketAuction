@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recommender - IPL Auction Strategist</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="header-container"></div>
+
+    <!-- Page Header -->
+    <section class="page-header">
+        <div class="container">
+            <h1 class="page-title reveal">Player Recommender</h1>
+            <nav class="breadcrumb">
+                <a href="index.html">Home</a>
+                <span>/</span>
+                <span>Recommender</span>
+            </nav>
+        </div>
+    </section>
+
+    <!-- Team Selection -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title reveal">Select Team</h2>
+            <div id="team-selector" class="team-selector"></div>
+        </div>
+    </section>
+
+    <!-- Filters and Controls -->
+    <section class="section">
+        <div class="container">
+            <div class="controls-panel card">
+                <div class="controls-row">
+                    <div class="control-group">
+                        <label for="filter-group" class="form-label">Filter by Group</label>
+                        <div class="group-buttons">
+                            <button class="group-btn btn btn-outline active" data-group="all">All Groups</button>
+                            <button class="group-btn btn btn-outline" data-group="A">Group A</button>
+                            <button class="group-btn btn btn-outline" data-group="B">Group B</button>
+                            <button class="group-btn btn btn-outline" data-group="C">Group C</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label for="filter-role" class="form-label">Filter by Role</label>
+                        <select id="filter-role" class="form-select">
+                            <option value="">All Roles</option>
+                            <option value="Batsman">Batsman</option>
+                            <option value="Bowler">Bowler</option>
+                            <option value="All-rounder">All-rounder</option>
+                            <option value="Wicket-keeper">Wicket-keeper</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="filter-speciality" class="form-label">Filter by Speciality</label>
+                        <select id="filter-speciality" class="form-select">
+                            <option value="">All Specialities</option>
+                            <option value="Power Hitter">Power Hitter</option>
+                            <option value="Anchor">Anchor</option>
+                            <option value="Finisher">Finisher</option>
+                            <option value="Pace Bowler">Pace Bowler</option>
+                            <option value="Spin Bowler">Spin Bowler</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="search-input" class="form-label">Search</label>
+                        <input type="text" id="search-input" class="form-input" placeholder="Search players...">
+                    </div>
+                    <div class="control-group">
+                        <label for="sort-select" class="form-label">Sort By</label>
+                        <select id="sort-select" class="form-select">
+                            <option value="match_score">Match Score</option>
+                            <option value="price">Price Estimate</option>
+                            <option value="name">Name</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Recommendations -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title reveal">Recommendations</h2>
+            <div id="recommendations-container"></div>
+        </div>
+    </section>
+
+    <!-- Player Modal -->
+    <div id="player-modal" class="modal">
+        <!-- Modal content will be inserted by JavaScript -->
+    </div>
+
+    <div id="footer-container"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/animations.js"></script>
+    <script src="js/recommender.js"></script>
+    <script>
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .page-header {
+                background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+                color: white;
+                padding: 4rem 0 2rem;
+            }
+            .page-title {
+                font-size: 3rem;
+                color: white;
+                margin-bottom: 1rem;
+            }
+            .breadcrumb {
+                display: flex;
+                gap: 0.5rem;
+                color: rgba(255,255,255,0.9);
+            }
+            .breadcrumb a {
+                color: rgba(255,255,255,0.9);
+            }
+            .team-selector {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 1rem;
+                justify-content: center;
+            }
+            .team-btn {
+                padding: 12px 24px;
+                border: 2px solid var(--primary-color);
+                background: var(--surface);
+                color: var(--primary-color);
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                transition: var(--transition);
+            }
+            .team-btn:hover,
+            .team-btn.active {
+                background: var(--primary-color);
+                color: white;
+            }
+            .controls-panel {
+                padding: 2rem;
+            }
+            .controls-row {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 1.5rem;
+            }
+            .control-group {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+            .group-buttons {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+            .group-btn.active {
+                background: var(--primary-color);
+                color: white;
+                border-color: var(--primary-color);
+            }
+            .group-section {
+                margin-bottom: 3rem;
+            }
+            .group-title {
+                margin-bottom: 1.5rem;
+                color: var(--primary-color);
+            }
+            .recommendations-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 1.5rem;
+            }
+            .recommendation-card {
+                cursor: pointer;
+                transition: var(--transition);
+            }
+            .recommendation-card:hover {
+                transform: translateY(-4px);
+                box-shadow: var(--shadow-lg);
+            }
+            .recommendation-card h3 {
+                color: var(--primary-color);
+                margin-bottom: 1rem;
+            }
+            .player-badges {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+                flex-wrap: wrap;
+            }
+            .player-stats {
+                margin-bottom: 1rem;
+            }
+            .player-stats .stat {
+                margin-bottom: 0.5rem;
+            }
+            .recommendation-reason {
+                padding: 1rem;
+                background: var(--background);
+                border-radius: 8px;
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+            }
+            .modal {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.7);
+                z-index: 10000;
+                align-items: center;
+                justify-content: center;
+            }
+            .modal-content {
+                background: var(--surface);
+                padding: 2rem;
+                border-radius: 12px;
+                max-width: 600px;
+                width: 90%;
+                max-height: 80vh;
+                overflow-y: auto;
+                position: relative;
+            }
+            .modal-close {
+                position: absolute;
+                top: 1rem;
+                right: 1rem;
+                font-size: 2rem;
+                cursor: pointer;
+                color: var(--text-secondary);
+                line-height: 1;
+            }
+            .modal-close:hover {
+                color: var(--text-primary);
+            }
+            .modal-body {
+                margin-top: 1.5rem;
+            }
+            .modal-section {
+                margin-bottom: 1.5rem;
+            }
+            .modal-section h3 {
+                color: var(--primary-color);
+                margin-bottom: 0.5rem;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>

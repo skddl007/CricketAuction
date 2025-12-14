@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Services - IPL Auction Strategist</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="header-container"></div>
+
+    <!-- Page Header -->
+    <section class="page-header">
+        <div class="container">
+            <h1 class="page-title reveal">Our Services</h1>
+            <nav class="breadcrumb">
+                <a href="index.html">Home</a>
+                <span>/</span>
+                <span>Services</span>
+            </nav>
+        </div>
+    </section>
+
+    <!-- Service Cards -->
+    <section class="section">
+        <div class="container">
+            <div class="grid grid-2">
+                <!-- Team Gap Analysis -->
+                <div class="card service-card reveal">
+                    <div class="service-icon">🔍</div>
+                    <h2 class="card-title">Team Gap Analysis</h2>
+                    <p class="card-content">
+                        Comprehensive analysis of your team's weaknesses and gaps across different phases of the game.
+                    </p>
+                    <ul class="service-features">
+                        <li>Batting order gap identification</li>
+                        <li>Bowling phase gap analysis</li>
+                        <li>Weak points with severity levels</li>
+                        <li>Team composition balance check</li>
+                    </ul>
+                    <a href="team-analysis.html" class="btn btn-primary">Try It Now</a>
+                </div>
+
+                <!-- Player Recommendations -->
+                <div class="card service-card reveal">
+                    <div class="service-icon">🎯</div>
+                    <h2 class="card-title">Player Recommendations</h2>
+                    <p class="card-content">
+                        AI-powered player recommendations grouped by priority (A/B/C) based on team fit and match score.
+                    </p>
+                    <ul class="service-features">
+                        <li>Group A: High priority targets</li>
+                        <li>Group B: Good alternatives</li>
+                        <li>Group C: Backup options</li>
+                        <li>Match score and price estimates</li>
+                    </ul>
+                    <a href="recommender.html" class="btn btn-primary">Try It Now</a>
+                </div>
+
+                <!-- Live Auction Tracking -->
+                <div class="card service-card reveal">
+                    <div class="service-icon">⚡</div>
+                    <h2 class="card-title">Live Auction Tracking</h2>
+                    <p class="card-content">
+                        Real-time auction state tracking with live recommendations for all teams as players are sold.
+                    </p>
+                    <ul class="service-features">
+                        <li>Real-time state updates</li>
+                        <li>Live recommendations panel</li>
+                        <li>Recent sales feed</li>
+                        <li>Auto-refresh functionality</li>
+                    </ul>
+                    <a href="live-auction.html" class="btn btn-primary">Try It Now</a>
+                </div>
+
+                <!-- AI Chat Assistant -->
+                <div class="card service-card reveal">
+                    <div class="service-icon">💬</div>
+                    <h2 class="card-title">AI Chat Assistant</h2>
+                    <p class="card-content">
+                        Interactive AI-powered chat interface to get instant answers about team strategies and recommendations.
+                    </p>
+                    <ul class="service-features">
+                        <li>Natural language queries</li>
+                        <li>Team-specific context</li>
+                        <li>Strategy recommendations</li>
+                        <li>Quick question suggestions</li>
+                    </ul>
+                    <a href="chat.html" class="btn btn-primary">Try It Now</a>
+                </div>
+
+                <!-- Team Matrix Visualization -->
+                <div class="card service-card reveal">
+                    <div class="service-icon">📈</div>
+                    <h2 class="card-title">Team Matrix Visualization</h2>
+                    <p class="card-content">
+                        Visual matrix representation of your team showing player roles, specialities, and composition at a glance.
+                    </p>
+                    <ul class="service-features">
+                        <li>Color-coded role matrix</li>
+                        <li>Speciality indicators</li>
+                        <li>Hover tooltips with details</li>
+                        <li>Responsive grid layout</li>
+                    </ul>
+                    <a href="team-analysis.html" class="btn btn-primary">Try It Now</a>
+                </div>
+
+                <!-- Weak Points Identification -->
+                <div class="card service-card reveal">
+                    <div class="service-icon">⚠️</div>
+                    <h2 class="card-title">Weak Points Identification</h2>
+                    <p class="card-content">
+                        Simplified view of team weak points with severity indicators to prioritize recruitment needs.
+                    </p>
+                    <ul class="service-features">
+                        <li>Critical/High/Medium severity</li>
+                        <li>Quick overview format</li>
+                        <li>Actionable insights</li>
+                        <li>Priority-based recommendations</li>
+                    </ul>
+                    <a href="team-analysis.html" class="btn btn-primary">Try It Now</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div id="footer-container"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/animations.js"></script>
+    <script>
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .page-header {
+                background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+                color: white;
+                padding: 4rem 0 2rem;
+            }
+            .page-title {
+                font-size: 3rem;
+                color: white;
+                margin-bottom: 1rem;
+            }
+            .breadcrumb {
+                display: flex;
+                gap: 0.5rem;
+                color: rgba(255,255,255,0.9);
+            }
+            .breadcrumb a {
+                color: rgba(255,255,255,0.9);
+            }
+            .service-card {
+                padding: 2rem;
+            }
+            .service-icon {
+                font-size: 4rem;
+                margin-bottom: 1rem;
+            }
+            .service-features {
+                list-style: none;
+                margin: 1.5rem 0;
+                padding: 0;
+            }
+            .service-features li {
+                padding: 0.5rem 0;
+                padding-left: 1.5rem;
+                position: relative;
+            }
+            .service-features li::before {
+                content: '✓';
+                position: absolute;
+                left: 0;
+                color: var(--primary-color);
+                font-weight: bold;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Auction - IPL Auction Strategist</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="header-container"></div>
+
+    <!-- Page Header -->
+    <section class="page-header">
+        <div class="container">
+            <h1 class="page-title reveal">Live Auction</h1>
+            <nav class="breadcrumb">
+                <a href="index.html">Home</a>
+                <span>/</span>
+                <span>Live Auction</span>
+            </nav>
+        </div>
+    </section>
+
+    <!-- Auction Status -->
+    <section class="section">
+        <div class="container">
+            <div class="status-header">
+                <h2 class="section-title reveal">Auction Status</h2>
+                <div id="refresh-indicator" class="refresh-indicator"></div>
+            </div>
+            <div id="auction-status"></div>
+        </div>
+    </section>
+
+    <!-- Sell Player Form -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title reveal">Record Player Sale</h2>
+            <div class="card">
+                <form id="sell-player-form" class="sell-form">
+                    <div class="form-group">
+                        <label for="player_name" class="form-label">Player Name</label>
+                        <input type="text" id="player_name" name="player_name" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="team" class="form-label">Team</label>
+                        <select id="team" name="team" class="form-select" required>
+                            <option value="">Select Team</option>
+                            <option value="CSK">CSK</option>
+                            <option value="RCB">RCB</option>
+                            <option value="MI">MI</option>
+                            <option value="KKR">KKR</option>
+                            <option value="DC">DC</option>
+                            <option value="GT">GT</option>
+                            <option value="LSG">LSG</option>
+                            <option value="PBKS">PBKS</option>
+                            <option value="RR">RR</option>
+                            <option value="SRH">SRH</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="price" class="form-label">Price (₹)</label>
+                        <input type="number" id="price" name="price" class="form-input" min="0" step="0.01" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Record Sale</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Recommendations -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title reveal">Live Recommendations</h2>
+            <div id="live-recommendations" class="card"></div>
+        </div>
+    </section>
+
+    <!-- Recent Sales Feed -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title reveal">Recent Sales</h2>
+            <div id="recent-sales" class="card"></div>
+        </div>
+    </section>
+
+    <div id="footer-container"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/animations.js"></script>
+    <script src="js/live-auction.js"></script>
+    <script>
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .page-header {
+                background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+                color: white;
+                padding: 4rem 0 2rem;
+            }
+            .page-title {
+                font-size: 3rem;
+                color: white;
+                margin-bottom: 1rem;
+            }
+            .breadcrumb {
+                display: flex;
+                gap: 0.5rem;
+                color: rgba(255,255,255,0.9);
+            }
+            .breadcrumb a {
+                color: rgba(255,255,255,0.9);
+            }
+            .status-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 2rem;
+            }
+            .refresh-indicator {
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+            }
+            .status-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 1.5rem;
+            }
+            .status-card {
+                text-align: center;
+                padding: 2rem;
+            }
+            .status-label {
+                color: var(--text-secondary);
+                font-size: 0.9rem;
+                margin-bottom: 0.5rem;
+            }
+            .status-value {
+                font-size: 2.5rem;
+                font-weight: 700;
+                color: var(--primary-color);
+            }
+            .sell-form {
+                max-width: 600px;
+                margin: 0 auto;
+            }
+            .accordion-group {
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .accordion {
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            .accordion-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 1rem 1.5rem;
+                background: var(--background);
+                cursor: pointer;
+                transition: var(--transition);
+            }
+            .accordion-header:hover {
+                background: var(--border-color);
+            }
+            .accordion-header h3 {
+                margin: 0;
+            }
+            .accordion-icon {
+                transition: transform 0.3s;
+            }
+            .accordion.active .accordion-icon {
+                transform: rotate(180deg);
+            }
+            .accordion-content {
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease-out;
+            }
+            .accordion.active .accordion-content {
+                max-height: 2000px;
+                padding: 1.5rem;
+            }
+            .recommendations-list {
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .recommendation-item h4 {
+                margin-bottom: 0.5rem;
+                color: var(--primary-color);
+            }
+            .player-info {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .match-score {
+                margin-left: auto;
+                font-weight: 600;
+                color: var(--primary-color);
+            }
+            .sales-list {
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .sale-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 1rem 1.5rem;
+            }
+            .sale-player {
+                font-weight: 600;
+                font-size: 1.1rem;
+            }
+            .sale-details {
+                display: flex;
+                gap: 1rem;
+                align-items: center;
+            }
+            .sale-price {
+                font-weight: 700;
+                color: var(--primary-color);
+                font-size: 1.1rem;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
