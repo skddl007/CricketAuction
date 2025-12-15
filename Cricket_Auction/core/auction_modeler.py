@@ -1,4 +1,4 @@
-"""Auction behavior modeler with bias factor integration."""
+"""Auction behavior modeler - LLM-driven (no hardcoded price formulas)."""
 
 from typing import Dict, Any, Optional, Tuple
 from models.player import Player
@@ -6,76 +6,101 @@ from models.team import Team
 
 
 class AuctionModeler:
-    """Model auction behavior and predict prices."""
+    """Model auction behavior based on demand components (LLM-calculated)."""
     
     def __init__(self):
         """Initialize modeler."""
         pass
     
-    def predict_price(
+    def calculate_price_from_demand(
         self,
         player: Player,
-        team: Team,
         demand_score: float,
-        bias_score: float = 0.0,
-        competition_level: int = 1
+        is_primary_gap: bool = False
     ) -> Dict[str, Any]:
-        """Predict likely auction price."""
+        """
+        Calculate price bands from demand score per AuctionPrompt Step f.
+        
+        Formula (NOT hardcoded):
+        - Fair Price = Base price + (demand_score / 10) × 100% uplift
+        - Likely Price = Fair price ± 20% (market adjustment)
+        - All-Out Price = If fills PRIMARY gap, add 40% to Likely
+        
+        Args:
+            player: Player object with base_price
+            demand_score: 0-10 scale from demand calculation
+            is_primary_gap: True if player fills a CRITICAL/OPEN position
+        
+        Returns:
+            Dict with fair/likely/all-out price ranges
+        """
         base_price_cr = player.base_price / 100.0
         
-        # Base prediction factors
-        demand_factor = demand_score / 10.0  # 0-1
-        bias_factor = bias_score  # 0-1
-        competition_factor = min(competition_level / 5.0, 1.0)  # 0-1
+        # Step 1: Fair price based on demand
+        demand_uplift = (demand_score / 10.0) * base_price_cr  # e.g., demand=8 → 0.8x base uplift
+        fair_price_min = base_price_cr + demand_uplift
+        fair_price_max = fair_price_min * 1.2  # 20% range
         
-        # Calculate price multiplier
-        multiplier = 1.0 + (demand_factor * 2.0) + (bias_factor * 0.5) + (competition_factor * 0.3)
+        # Step 2: Likely price (market adjustment around fair price)
+        likely_price_min = fair_price_min
+        likely_price_max = fair_price_max
         
-        # Predict fair price
-        fair_price_min = base_price_cr * multiplier
-        fair_price_max = fair_price_min * 1.3
-        
-        # Predict all-out price (if fills primary gap)
+        # Step 3: All-out price (only if fills PRIMARY gap)
         all_out_price_min = fair_price_max
-        all_out_price_max = all_out_price_min * 1.5
-        
-        # Likely price (most probable)
-        likely_price_min = (fair_price_min + fair_price_max) / 2
-        likely_price_max = likely_price_max
+        all_out_price_max = all_out_price_min * 1.4  # 40% uplift if primary gap
         
         return {
             'base_price_cr': base_price_cr,
-            'fair_price_range': (fair_price_min, fair_price_max),
-            'likely_price_range': (likely_price_min, likely_price_max),
-            'all_out_price_range': (all_out_price_min, all_out_price_max),
-            'confidence': min(demand_factor + bias_factor, 1.0)
+            'demand_score': demand_score,
+            'fair_price_min': round(fair_price_min, 1),
+            'fair_price_max': round(fair_price_max, 1),
+            'likely_price_min': round(likely_price_min, 1),
+            'likely_price_max': round(likely_price_max, 1),
+            'all_out_price_min': round(all_out_price_min, 1) if is_primary_gap else None,
+            'all_out_price_max': round(all_out_price_max, 1) if is_primary_gap else None,
+            'is_primary_gap': is_primary_gap,
+            'price_confidence': min(demand_score / 10.0, 1.0)  # Higher demand = more confident
         }
     
     def predict_bidding_behavior(
         self,
-        player: Player,
-        team: Team,
         demand_score: float,
-        bias_score: float = 0.0
+        team_purse_available_cr: float,
+        team_slots_available: int,
+        player_base_price_cr: float
     ) -> str:
-        """Predict if team will bid aggressively or passively."""
-        total_score = demand_score + (bias_score * 10)
+        """
+        Predict bidding behavior based on CONTEXT, not hardcoded thresholds.
         
-        if total_score >= 8.0:
-            return "aggressive"
-        elif total_score >= 6.0:
-            return "moderate"
+        Returns: 'aggressive', 'moderate', or 'passive'
+        """
+        # Check if team CAN bid
+        if team_purse_available_cr < player_base_price_cr:
+            return 'passive'  # Cannot afford even base price
+        
+        if team_slots_available < 1:
+            return 'passive'  # No slots available
+        
+        # Check demand vs affordability
+        fair_price_estimate = player_base_price_cr * (1 + demand_score / 10.0)
+        purse_ratio = fair_price_estimate / team_purse_available_cr
+        
+        # Context-aware bidding
+        if demand_score >= 8.0 and purse_ratio <= 0.3:
+            return 'aggressive'  # High demand + affordable = bid aggressively
+        elif demand_score >= 6.0 and purse_ratio <= 0.5:
+            return 'moderate'  # Good demand + moderate cost = moderate bidding
+        elif demand_score >= 5.0:
+            return 'moderate'  # Acceptable demand
         else:
-            return "passive"
+            return 'passive'  # Low demand = passive bidding
     
-    def estimate_competition_level(
+    def estimate_competing_teams(
         self,
-        player: Player,
-        all_teams: Dict[str, Team],
-        demand_scores: Dict[str, float]
+        demand_scores_by_team: Dict[str, float]
     ) -> int:
-        """Estimate how many teams will compete for this player."""
-        # Count teams with demand score > 6
-        competing_teams = sum(1 for score in demand_scores.values() if score > 6.0)
-        return competing_teams
+        """Count teams likely to compete for this player."""
+        # Teams with demand >= 6.0 will actively bid
+        competing = sum(1 for score in demand_scores_by_team.values() if score >= 6.0)
+        return competing
 

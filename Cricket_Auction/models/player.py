@@ -221,3 +221,14 @@ class Player:
         
         return player
 
+    def __eq__(self, other: object) -> bool:
+        """Equality based on unique identifying attributes (name + country)."""
+        if not isinstance(other, Player):
+            return False
+        return (self.name or '').strip().lower() == (other.name or '').strip().lower() and \
+            (self.country or '').strip().lower() == (other.country or '').strip().lower()
+
+    def __hash__(self) -> int:
+        """Hash based on name and country to allow use in sets/dicts."""
+        return hash(((self.name or '').strip().lower(), (self.country or '').strip().lower()))
+

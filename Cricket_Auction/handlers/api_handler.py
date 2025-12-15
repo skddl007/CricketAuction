@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
 from core.state_manager import StateManager
@@ -37,8 +38,55 @@ class ChatRequest(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 
-# Initialize FastAPI app
-app = FastAPI(title="IPL Auction Strategist API")
+# These will be set during initialization
+state_manager: Optional[StateManager] = None
+recommender: Optional[Recommender] = None
+player_grouper: Optional[PlayerGrouper] = None
+matrix_generator: Optional[MatrixGenerator] = None
+team_selection_handler: Optional[TeamSelectionHandler] = None
+live_bid_handler: Optional[LiveBidHandler] = None
+components: Optional[Dict[str, Any]] = None
+
+
+# Lifespan context manager for FastAPI startup/shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle startup and shutdown events."""
+    # Startup
+    print("\n" + "=" * 60)
+    print("[API_HANDLER] FastAPI startup - Initializing system...")
+    try:
+        from main import initialize_system
+        global state_manager, recommender, player_grouper, matrix_generator
+        global team_selection_handler, live_bid_handler, components
+        
+        components = initialize_system()
+        initialize_handlers(
+            components['state_manager'],
+            components['recommender'],
+            components['player_grouper'],
+            components['matrix_generator']
+        )
+        set_components(components)
+        print("[API_HANDLER] System initialized successfully!")
+        print("=" * 60 + "\n")
+    except Exception as e:
+        print(f"[API_HANDLER] ERROR during startup: {e}")
+        import traceback
+        print(traceback.format_exc())
+        print("=" * 60 + "\n")
+    
+    yield
+    
+    # Shutdown
+    print("[API_HANDLER] FastAPI shutdown")
+
+
+# Initialize FastAPI app with lifespan
+app = FastAPI(
+    title="IPL Auction Strategist API",
+    lifespan=lifespan
+)
 
 # Add CORS middleware to allow requests from file:// origin and other origins
 app.add_middleware(
@@ -48,15 +96,6 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
-
-# These will be set during initialization
-state_manager: Optional[StateManager] = None
-recommender: Optional[Recommender] = None
-player_grouper: Optional[PlayerGrouper] = None
-matrix_generator: Optional[MatrixGenerator] = None
-team_selection_handler: Optional[TeamSelectionHandler] = None
-live_bid_handler: Optional[LiveBidHandler] = None
-components: Optional[Dict[str, Any]] = None
 
 
 def initialize_handlers(
@@ -299,34 +338,21 @@ async def chat_with_recommender(request: ChatRequest):
         print("[API] ERROR: System components not initialized!")
         raise HTTPException(status_code=500, detail="System components not initialized")
     
-    from llm.gemini_client import GeminiClient
-    from llm.prompt_loader import PromptLoader
+    if not state_manager:
+        print("[API] ERROR: State manager not available!")
+        raise HTTPException(status_code=500, detail="State manager not available")
+    
     from core.playing11_analyzer import Playing11Analyzer
-    
-    gemini_client = components.get('gemini_client')
-    print(f"[API] GeminiClient exists: {gemini_client is not None}")
-    
-    if not gemini_client:
-        print("[API] ERROR: Gemini client not available!")
-        raise HTTPException(
-            status_code=503, 
-            detail="LLM features not available. GEMINI_API_KEY required."
-        )
-    
-    print("[API] Loading prompt...")
-    prompt_loader = PromptLoader()
-    system_prompt = prompt_loader.get_full_context()
-    print(f"[API] System prompt loaded: {len(system_prompt)} characters")
     
     # Build context based on request
     context_parts = []
+    team_analysis = None
     
-    # If team specified, include team analysis
+    # If team specified, include team analysis (ALWAYS do this for team context)
     if request.team_name:
         print(f"[API] Processing team context for: {request.team_name}")
         team_name = normalize_team_name(request.team_name)
-        team = state_manager.get_team(team_name) if state_manager else None
-        print(f"[API] StateManager exists: {state_manager is not None}")
+        team = state_manager.get_team(team_name)
         print(f"[API] Team found: {team is not None}")
         
         if team:
@@ -335,23 +361,33 @@ async def chat_with_recommender(request: ChatRequest):
             team_analysis = analyzer.analyze_team(team)
             print(f"[API] Team analysis complete. Weak points: {len(team_analysis.get('weak_points', []))}")
             
-            context_parts.append(f"Team: {team_name}")
+            # Format team context for AI
+            context_parts.append(f"=== TEAM ANALYSIS FOR {team_name} ===")
             context_parts.append(f"Purse Available: {team_analysis.get('purse_available_cr', 0):.2f} Cr")
             context_parts.append(f"Available Slots: {team_analysis.get('available_slots', 0)}")
-            context_parts.append(f"\nWeak Points:")
-            for wp in team_analysis.get('weak_points', []):
-                context_parts.append(f"- {wp['category']} ({wp['severity']}): {wp['details']}")
-            context_parts.append(f"\nBatting Order Gaps:")
-            for bo in team_analysis.get('batting_order', []):
-                if bo.get('status') == 'NotCheck':
-                    context_parts.append(f"- Position {bo['position']}: Need {bo.get('speciality', 'Player')}")
-            context_parts.append(f"\nBowling Phase Gaps:")
-            for bp in team_analysis.get('bowling_phases', []):
-                if bp.get('status') == 'NotCheck':
-                    context_parts.append(f"- {bp['phase']}: Need primary bowler")
+            
+            weak_points = team_analysis.get('weak_points', [])
+            if weak_points:
+                context_parts.append(f"\nWEAK POINTS ({len(weak_points)}):")
+                for wp in weak_points:
+                    context_parts.append(f"  • {wp.get('category', 'Unknown')} ({wp.get('severity', 'Medium')}): {wp.get('details', 'N/A')}")
+            
+            batting_gaps = [bo for bo in team_analysis.get('batting_order', []) if bo.get('status') == 'NotCheck']
+            if batting_gaps:
+                context_parts.append(f"\nBATTING GAPS ({len(batting_gaps)}):")
+                for bo in batting_gaps:
+                    context_parts.append(f"  • Position {bo.get('position', 'N/A')}: Need {bo.get('speciality', 'batsman')}")
+            
+            bowling_gaps = [bp for bp in team_analysis.get('bowling_phases', []) if bp.get('status') == 'NotCheck']
+            if bowling_gaps:
+                context_parts.append(f"\nBOWLING GAPS ({len(bowling_gaps)}):")
+                for bp in bowling_gaps:
+                    context_parts.append(f"  • {bp.get('phase', 'N/A')}: Need primary bowler")
+            
             print(f"[API] Context parts added: {len(context_parts)} items")
         else:
             print(f"[API] WARNING: Team {team_name} not found in state manager")
+            context_parts.append(f"Team '{request.team_name}' not found in database.")
     
     # Add custom context if provided
     if request.context:
@@ -361,45 +397,100 @@ async def chat_with_recommender(request: ChatRequest):
     context_str = "\n".join(context_parts) if context_parts else ""
     print(f"[API] Total context length: {len(context_str)} characters")
     
-    # Build chat prompt
-    chat_prompt = f"""{system_prompt}
+    # Try to use LLM if available, otherwise return structured response
+    gemini_client = components.get('gemini_client')
+    print(f"[API] GeminiClient available: {gemini_client is not None}")
+    
+    if gemini_client:
+        try:
+            print("[API] Loading system prompt...")
+            from llm.prompt_loader import PromptLoader
+            prompt_loader = PromptLoader()
+            system_prompt = prompt_loader.load_prompt()
+            print(f"[API] System prompt loaded: {len(system_prompt)} characters")
+            
+            # Build chat prompt with context
+            chat_prompt = f"""{system_prompt}
 
-=== USER QUERY ===
-{request.message}
-
+=== CURRENT CONTEXT ===
 {context_str}
 
-=== YOUR ROLE ===
-You are an IPL auction strategist assistant. Help the user with:
-1. Analyzing team gaps and weak points
-2. Recommending players based on identified gaps
-3. Explaining auction strategies
-4. Answering questions about player-team fits
+=== USER QUESTION ===
+{request.message}
 
-Provide clear, actionable advice based on the team's current state and requirements.
+=== INSTRUCTIONS ===
+Answer the user's question based on the team context provided. If they ask about gaps, 
+recommend specific players from the available pool that would fill those gaps. Be specific 
+and actionable in your recommendations.
 """
+            
+            print(f"[API] Total prompt length: {len(chat_prompt)} characters")
+            print("[API] Calling Gemini API...")
+            
+            response = gemini_client.generate_content(chat_prompt)
+            print(f"[API] Gemini response received: {len(response) if response else 0} characters")
+            print(f"[API] Response preview: {response[:100] if response else 'None'}...")
+            
+            result = {
+                "response": response,
+                "team": request.team_name,
+                "context_provided": bool(context_parts),
+                "source": "llm"
+            }
+            print("[API] Chat response successful!")
+            print("=" * 60 + "\n")
+            return result
+            
+        except Exception as e:
+            print(f"[API] ERROR with Gemini: {str(e)}")
+            print(f"[API] Exception type: {type(e).__name__}")
+            import traceback
+            print(f"[API] Traceback: {traceback.format_exc()}")
+            print("[API] Falling back to structured response...")
+            # Fall through to structured response below
     
-    print(f"[API] Total prompt length: {len(chat_prompt)} characters")
-    print("[API] Calling Gemini API...")
+    # Fallback: Return structured response from team analysis
+    print("[API] Returning fallback structured response...")
     
-    try:
-        response = gemini_client.generate_content(chat_prompt)
-        print(f"[API] Gemini response received: {len(response) if response else 0} characters")
-        print(f"[API] Response preview: {response[:100] if response else 'None'}...")
+    if team_analysis:
+        weak_points = team_analysis.get('weak_points', [])
+        batting_gaps = [bo for bo in team_analysis.get('batting_order', []) if bo.get('status') == 'NotCheck']
+        bowling_gaps = [bp for bp in team_analysis.get('bowling_phases', []) if bp.get('status') == 'NotCheck']
         
-        result = {
-            "response": response,
-            "team": request.team_name,
-            "context_provided": bool(context_parts)
-        }
-        print("[API] Chat response successful!")
-        print("=" * 60 + "\n")
-        return result
-    except Exception as e:
-        print(f"[API] ERROR generating response: {str(e)}")
-        print(f"[API] Exception type: {type(e).__name__}")
-        import traceback
-        print(f"[API] Traceback: {traceback.format_exc()}")
-        print("=" * 60 + "\n")
-        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+        response_text = f"## {request.team_name} Analysis\n\n"
+        response_text += f"**Purse Available:** {team_analysis.get('purse_available_cr', 0):.2f} Cr\n"
+        response_text += f"**Available Slots:** {team_analysis.get('available_slots', 0)}\n\n"
+        
+        if weak_points:
+            response_text += f"### Weak Points ({len(weak_points)})\n"
+            for wp in weak_points:
+                response_text += f"- **{wp.get('category', 'Unknown')}** ({wp.get('severity', 'Medium')}): {wp.get('details', 'N/A')}\n"
+            response_text += "\n"
+        
+        if batting_gaps:
+            response_text += f"### Batting Gaps ({len(batting_gaps)})\n"
+            for bo in batting_gaps:
+                response_text += f"- **Position {bo.get('position', 'N/A')}**: Need {bo.get('speciality', 'batsman')}\n"
+            response_text += "\n"
+        
+        if bowling_gaps:
+            response_text += f"### Bowling Gaps ({len(bowling_gaps)})\n"
+            for bp in bowling_gaps:
+                response_text += f"- **{bp.get('phase', 'N/A')}**: Need primary bowler\n"
+            response_text += "\n"
+        
+        response_text += f"**User Question:** {request.message}\n"
+        response_text += "\n(Note: LLM features are not available. Please use the recommender endpoint for player suggestions.)"
+    else:
+        response_text = f"Team context not found. Your question: {request.message}\n\nPlease select a team from the dropdown and try again."
+    
+    result = {
+        "response": response_text,
+        "team": request.team_name,
+        "context_provided": bool(context_parts),
+        "source": "fallback"
+    }
+    print("[API] Fallback response returned!")
+    print("=" * 60 + "\n")
+    return result
 

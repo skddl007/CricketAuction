@@ -31,11 +31,20 @@ async function apiFetch(endpoint, options = {}) {
         config.body = JSON.stringify(config.body);
     }
 
+    console.log(`[API] ${config.method || 'GET'} ${url}`);
+    if (config.body) {
+        console.log(`[API] Request body:`, config.body);
+    }
+
     try {
         const response = await fetch(url, config);
+        console.log(`[API] Response status: ${response.status}`);
+        
         const data = await response.json();
+        console.log(`[API] Response data:`, data);
 
         if (!response.ok) {
+            console.error(`[API] Error response:`, data);
             throw new APIError(
                 data.detail || `HTTP error! status: ${response.status}`,
                 response.status,
@@ -45,6 +54,7 @@ async function apiFetch(endpoint, options = {}) {
 
         return data;
     } catch (error) {
+        console.error(`[API] Fetch error:`, error);
         if (error instanceof APIError) {
             throw error;
         }

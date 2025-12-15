@@ -252,6 +252,19 @@
             align-items: flex-start;
         }
 
+        .chat-message-system {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            align-items: center;
+            padding: 12px 16px;
+            background: #E3F2FD;
+            border-left: 4px solid #1976D2;
+            border-radius: 4px;
+            color: #0D47A1;
+            font-size: 14px;
+        }
+
         .message-avatar {
             width: 40px;
             height: 40px;
@@ -603,6 +616,9 @@
     <script src="js/api.js"></script>
     <script src="js/main.js"></script>
     <script src="js/animations.js"></script>
+    <!-- Backend Direct Integration -->
+    <script src="js/backend-direct.js"></script>
+    <!-- Chat Interface -->
     <script src="js/chat.js"></script>
     <script>
         // Initialize
@@ -651,6 +667,9 @@
             const teams = ['CSK', 'RCB', 'MI', 'KKR', 'DC', 'GT', 'LSG', 'PBKS', 'RR', 'SRH'];
             const teamGrid = document.getElementById('team-grid');
             
+            // If a team was previously selected and persisted, mark it selected
+            const persisted = localStorage.getItem('selectedTeam');
+
             teams.forEach(team => {
                 const teamOption = document.createElement('div');
                 teamOption.className = 'team-option';
@@ -660,6 +679,11 @@
                     teamOption.classList.add('selected');
                     selectedTeamForModal = team;
                 };
+                // If this team matches persisted selection, mark selected
+                if (persisted && persisted === team) {
+                    teamOption.classList.add('selected');
+                    selectedTeamForModal = team;
+                }
                 teamGrid.appendChild(teamOption);
             });
         }
@@ -676,10 +700,23 @@
 
         function confirmTeamSelection() {
             if (selectedTeamForModal) {
-                if (typeof selectedTeam !== 'undefined') {
-                    selectedTeam = selectedTeamForModal;
+                // Set global selectedTeam and persist it so the user only needs to select once
+                try {
+                    window.selectedTeam = selectedTeamForModal;
+                    // Keep chat.js in sync
+                    if (typeof selectedTeam !== 'undefined') selectedTeam = selectedTeamForModal;
+                    localStorage.setItem('selectedTeam', selectedTeamForModal);
+                } catch (e) {
+                    console.warn('Could not persist selected team:', e);
                 }
-                document.getElementById('selected-team-display').textContent = selectedTeamForModal;
+
+                const display = document.getElementById('selected-team-display');
+                if (display) display.textContent = selectedTeamForModal;
+
+                // If a dropdown selector exists, update its value as well
+                const selector = document.getElementById('team-context-selector');
+                if (selector) selector.value = selectedTeamForModal;
+
                 closeTeamSelector();
             }
         }
@@ -741,99 +778,9 @@
             });
         }
 
-        // Override sendMessage if needed
-        function sendMessage() {
-            const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            if (!message) return;
+        // sendMessage is imported from chat.js module
 
-            // Add user message
-            addChatMessage('user', message);
-            input.value = '';
-            input.style.height = 'auto';
-
-            // Show typing indicator
-            showTypingIndicator();
-
-            // Send to API
-            if (typeof window.sendMessage === 'function') {
-                window.sendMessage(message);
-            } else if (typeof API !== 'undefined') {
-                const team = typeof selectedTeam !== 'undefined' ? selectedTeam : null;
-                API.sendChatMessage(message, team, null)
-                    .then(response => {
-                        removeTypingIndicator();
-                        addChatMessage('assistant', response.response || response.message || 'No response received');
-                    })
-                    .catch(error => {
-                        removeTypingIndicator();
-                        addChatMessage('error', `Error: ${error.message}`);
-                    });
-            } else {
-                // Fallback response
-                setTimeout(() => {
-                    removeTypingIndicator();
-                    addChatMessage('assistant', 'I understand your question about "' + message + '". Let me analyze that for you...');
-                }, 1000);
-            }
-        }
-
-        function addChatMessage(role, content) {
-            const chatArea = document.getElementById('chat-messages-area');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'chat-message';
-            
-            if (role === 'user') {
-                messageDiv.style.flexDirection = 'row-reverse';
-                messageDiv.innerHTML = `
-                    <div class="message-bubble" style="background: #1B5E20; color: white;">
-                        <div class="message-content">${content}</div>
-                        <div class="message-timestamp" style="color: rgba(255,255,255,0.7);">${new Date().toLocaleTimeString()}</div>
-                    </div>
-                `;
-            } else if (role === 'assistant') {
-                messageDiv.innerHTML = `
-                    <div class="message-avatar">CA</div>
-                    <div class="message-bubble">
-                        <div class="message-content">${content}</div>
-                        <div class="message-timestamp">${new Date().toLocaleTimeString()}</div>
-                    </div>
-                `;
-            } else {
-                messageDiv.innerHTML = `
-                    <div class="message-bubble" style="background: #FFEBEE; color: #C62828;">
-                        <div class="message-content">${content}</div>
-                    </div>
-                `;
-            }
-            
-            chatArea.appendChild(messageDiv);
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
-
-        function showTypingIndicator() {
-            const chatArea = document.getElementById('chat-messages-area');
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'chat-message';
-            typingDiv.id = 'typing-indicator';
-            typingDiv.innerHTML = `
-                <div class="message-avatar">CA</div>
-                <div class="message-bubble">
-                    <div class="message-content">
-                        <span class="typing-dots">...</span>
-                    </div>
-                </div>
-            `;
-            chatArea.appendChild(typingDiv);
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
-
-        function removeTypingIndicator() {
-            const indicator = document.getElementById('typing-indicator');
-            if (indicator) {
-                indicator.remove();
-            }
-        }
+        // These functions are imported from chat.js module
 
         // Make functions global
         window.sendMessage = sendMessage;
@@ -843,5 +790,6 @@
         window.startNewChat = startNewChat;
         window.closeSidebar = closeSidebar;
     </script>
+    
 </body>
 </html>

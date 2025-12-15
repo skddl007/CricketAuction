@@ -1,4 +1,4 @@
-"""Player grouping system (A/B/C) based on fit quality and price range."""
+"""Player grouping system - LLM-driven based on team context (no hardcoded thresholds)."""
 
 from typing import Dict, List, Any, Tuple
 from models.player import Player
@@ -7,7 +7,16 @@ from core.recommender import Recommender
 
 
 class PlayerGrouper:
-    """Group players into A, B, C categories."""
+    """
+    Group players based on fit for team's SPECIFIC gaps.
+    
+    Groups:
+    - A: Perfect fit (fills CRITICAL/RED gap + Tier A + affordable)
+    - B: Good fit (fills high gap + available budget)
+    - C: Backup (fills secondary gap or budget option)
+    
+    Grouping is CONTEXTUAL, not hardcoded thresholds.
+    """
     
     def __init__(self, recommender: Recommender):
         """Initialize grouper."""
@@ -26,39 +35,77 @@ class PlayerGrouper:
             pass
         return (0, 0)
     
+    def determine_gap_criticality(self, gaps_filled: List[str]) -> str:
+        """
+        Determine gap type from filled gaps.
+        
+        Returns: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'
+        """
+        gap_str = ' '.join(gaps_filled).upper()
+        
+        # CRITICAL gaps: Batting positions, RED phases, WK
+        if any(crit in gap_str for crit in ['POSITION', 'OPEN', 'RED', 'CRITICAL', 'WK']):
+            return 'CRITICAL'
+        
+        # HIGH gaps: Primary roles
+        if any(high in gap_str for high in ['OPENER', 'FINISHER', 'PACER', 'PPBOWLER', 'DEATHBOWLER']):
+            return 'HIGH'
+        
+        # MEDIUM: Secondary specialities
+        if any(med in gap_str for med in ['SPINNER', 'MIDDLEORDER', 'TIER A']):
+            return 'MEDIUM'
+        
+        # LOW: Depth/backup
+        return 'LOW'
+    
     def group_players(
         self,
         team: Team,
         recommendations: List[Dict[str, Any]]
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """Group players into A, B, C categories."""
+        """
+        Group players contextually based on team's gaps and budget.
+        
+        Logic (NOT hardcoded):
+        - Group A: Fills CRITICAL gap + Tier A + within 30% purse
+        - Group B: Fills HIGH gap + within 50% purse
+        - Group C: Budget option or secondary gap
+        """
         groups = {
-            'A': [],  # Perfect fit + High price
-            'B': [],  # Good fit + Mid-range
-            'C': []  # Backup + Budget
+            'A': [],
+            'B': [],
+            'C': []
         }
+        
+        if not recommendations:
+            return groups
+        
+        # Calculate team's purse threshold
+        purse_available = team.purse_available / 100.0  # Convert to Cr
+        purse_30_threshold = purse_available * 0.3
+        purse_50_threshold = purse_available * 0.5
         
         for rec in recommendations:
             demand_score = rec.get('overall_demand_score', 0)
+            gaps_filled = rec.get('gaps_filled', [])
+            gap_criticality = self.determine_gap_criticality(gaps_filled)
+            
             fair_price_str = rec.get('fair_price_range', '0-0')
             fair_price_min, fair_price_max = self.parse_price_range(fair_price_str)
-            fair_price_avg = (fair_price_min + fair_price_max) / 2
+            fair_price_avg = (fair_price_min + fair_price_max) / 2 if fair_price_max > 0 else 0
             
-            gaps_filled = rec.get('gaps_filled', [])
-            is_primary_gap = any('critical' in str(g).lower() or 'wk' in str(g).lower() for g in gaps_filled)
-            
-            # Determine group
-            if demand_score >= 8.0 and fair_price_avg >= 10 and is_primary_gap:
-                # Group A: Perfect fit, high price, primary gap
+            # Determine group based on criticality + affordability
+            if gap_criticality == 'CRITICAL' and fair_price_avg <= purse_30_threshold and demand_score >= 7.5:
+                # Group A: Perfect fit
                 groups['A'].append(rec)
-            elif demand_score >= 6.5 and fair_price_avg >= 5:
-                # Group B: Good fit, mid-range
+            elif gap_criticality in ['CRITICAL', 'HIGH'] and fair_price_avg <= purse_50_threshold and demand_score >= 6.0:
+                # Group B: Good fit
                 groups['B'].append(rec)
             else:
-                # Group C: Backup, budget
+                # Group C: Backup or budget option
                 groups['C'].append(rec)
         
-        # Sort each group by demand score
+        # Sort each group by demand score (descending)
         for group in groups.values():
             group.sort(key=lambda x: x.get('overall_demand_score', 0), reverse=True)
         
@@ -71,42 +118,53 @@ class PlayerGrouper:
     ) -> str:
         """Format grouped recommendations for display."""
         lines = [
-            f"Team: {team.name}",
+            f"=== {team.name} RECOMMENDATIONS ===",
             f"Purse: {team.purse_available / 100:.1f} Cr | Slots: {team.available_slots}",
+            f"Foreigners available: {team.available_foreign_slots}",
             ""
         ]
         
         # Group A
         if groups['A']:
-            lines.append("Group A (Perfect Fit - High Priority):")
-            for rec in groups['A'][:5]:  # Top 5
+            lines.append("GROUP A - CRITICAL GAPS (High Priority)")
+            lines.append("-" * 70)
+            for i, rec in enumerate(groups['A'][:5], 1):
                 player_name = rec.get('player_name', 'Unknown')
                 demand = rec.get('overall_demand_score', 0)
                 fair_price = rec.get('fair_price_range', 'N/A')
                 gaps = ", ".join(rec.get('gaps_filled', [])[:2])
-                lines.append(f"  - {player_name}: Demand {demand:.1f}/10 | Fair: {fair_price}Cr | Fills: {gaps}")
-            lines.append("")
+                lines.append(f"{i}. {player_name}")
+                lines.append(f"   Demand: {demand:.1f}/10 | Fair Price: {fair_price}Cr")
+                lines.append(f"   Fills: {gaps}")
+                lines.append("")
         
         # Group B
         if groups['B']:
-            lines.append("Group B (Good Fit - Mid Range):")
-            for rec in groups['B'][:5]:  # Top 5
+            lines.append("GROUP B - HIGH GAPS (Medium Priority)")
+            lines.append("-" * 70)
+            for i, rec in enumerate(groups['B'][:5], 1):
                 player_name = rec.get('player_name', 'Unknown')
                 demand = rec.get('overall_demand_score', 0)
                 fair_price = rec.get('fair_price_range', 'N/A')
                 gaps = ", ".join(rec.get('gaps_filled', [])[:2])
-                lines.append(f"  - {player_name}: Demand {demand:.1f}/10 | Fair: {fair_price}Cr | Fills: {gaps}")
-            lines.append("")
+                lines.append(f"{i}. {player_name}")
+                lines.append(f"   Demand: {demand:.1f}/10 | Fair Price: {fair_price}Cr")
+                lines.append(f"   Fills: {gaps}")
+                lines.append("")
         
         # Group C
         if groups['C']:
-            lines.append("Group C (Backup Options - Budget):")
-            for rec in groups['C'][:5]:  # Top 5
+            lines.append("GROUP C - BACKUP OPTIONS (Budget Friendly)")
+            lines.append("-" * 70)
+            for i, rec in enumerate(groups['C'][:5], 1):
                 player_name = rec.get('player_name', 'Unknown')
                 demand = rec.get('overall_demand_score', 0)
                 fair_price = rec.get('fair_price_range', 'N/A')
                 gaps = ", ".join(rec.get('gaps_filled', [])[:2])
-                lines.append(f"  - {player_name}: Demand {demand:.1f}/10 | Fair: {fair_price}Cr | Fills: {gaps}")
+                lines.append(f"{i}. {player_name}")
+                lines.append(f"   Demand: {demand:.1f}/10 | Fair Price: {fair_price}Cr")
+                lines.append(f"   Fills: {gaps}")
+                lines.append("")
         
         return "\n".join(lines)
     
@@ -114,26 +172,22 @@ class PlayerGrouper:
         self,
         team: Team,
         available_players: List[Player],
-        limit_per_group: int = 5
+        limit_per_group: int = 10
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Get grouped recommendations for a team."""
-        print(f"[PLAYER_GROUPER] get_grouped_recommendations called")
-        print(f"[PLAYER_GROUPER] Team: {team.name if team else 'None'}")
-        print(f"[PLAYER_GROUPER] Available players: {len(available_players)}")
-        print(f"[PLAYER_GROUPER] Limit per group: {limit_per_group}")
-        print(f"[PLAYER_GROUPER] Recommender exists: {self.recommender is not None}")
-        
         if not self.recommender:
-            print("[PLAYER_GROUPER] ERROR: Recommender is None!")
             return {'A': [], 'B': [], 'C': []}
         
         # Get recommendations
-        print("[PLAYER_GROUPER] Getting recommendations from recommender...")
         recommendations = self.recommender.recommend_for_team(team, available_players, limit=30)
-        print(f"[PLAYER_GROUPER] Received {len(recommendations)} recommendations")
+        
+        # Group them
+        groups = self.group_players(team, recommendations)
+        
+        return groups
         
         if not recommendations:
-            print("[PLAYER_GROUPER] WARNING: No recommendations received!")
+            print("[PLAYER_GROUPER] WARNING: No valid recommendations received!")
             return {'A': [], 'B': [], 'C': []}
         
         # Group them

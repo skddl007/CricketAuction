@@ -17,17 +17,15 @@ document.addEventListener('DOMContentLoaded', () => {
  * Initialize chat interface
  */
 function initializeChatInterface() {
-    const form = document.getElementById('chat-form');
     const input = document.getElementById('chat-input');
     
-    if (form) {
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const message = input.value.trim();
-            if (!message) return;
-
-            sendMessage(message);
-            input.value = '';
+    if (input) {
+        // Handle Enter key (without Shift)
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
         });
     }
 
@@ -47,15 +45,35 @@ function initializeChatInterface() {
  * Initialize team selector
  */
 function initializeTeamSelector() {
+    // If a modal-based selector exists in the page, prefer that and skip creating
+    // a duplicate dropdown. This avoids showing two selection UIs.
+    if (document.getElementById('team-selector-modal')) {
+        console.log('[CHAT] Team selector modal present; skipping dropdown creation');
+        // If the display element exists, ensure it reflects any previously selected team
+        const displayEl = document.getElementById('selected-team-display');
+        if (displayEl) {
+            displayEl.textContent = selectedTeam || 'Not set';
+        }
+        return;
+    }
+
     const selector = document.getElementById('team-context-selector');
-    if (!selector) return;
+    if (!selector) {
+        // Create team selector if it doesn't exist
+        console.log('[CHAT] Creating team selector');
+        createTeamSelector();
+        return;
+    }
 
     const teams = ['CSK', 'RCB', 'MI', 'KKR', 'DC', 'GT', 'LSG', 'PBKS', 'RR', 'SRH'];
+    
+    // Clear existing options
+    selector.innerHTML = '';
     
     // Add "None" option
     const noneOption = document.createElement('option');
     noneOption.value = '';
-    noneOption.textContent = 'No Team Context';
+    noneOption.textContent = 'Select Team';
     selector.appendChild(noneOption);
 
     teams.forEach(team => {
@@ -67,7 +85,31 @@ function initializeTeamSelector() {
 
     selector.addEventListener('change', (e) => {
         selectedTeam = e.target.value || null;
+        const displayEl = document.getElementById('selected-team-display');
+        if (displayEl) {
+            displayEl.textContent = selectedTeam || 'Not set';
+        }
+        console.log(`[CHAT] Team selected: ${selectedTeam}`);
     });
+}
+
+/**
+ * Create team selector element if missing
+ */
+function createTeamSelector() {
+    let selector = document.getElementById('team-context-selector');
+    if (!selector) {
+        selector = document.createElement('select');
+        selector.id = 'team-context-selector';
+        selector.className = 'select-team-btn';
+        
+        const topBar = document.querySelector('.chat-top-bar');
+        if (topBar) {
+            topBar.appendChild(selector);
+        }
+        
+        initializeTeamSelector();
+    }
 }
 
 /**
@@ -75,13 +117,25 @@ function initializeTeamSelector() {
  */
 function loadTeamFromURL() {
     const params = new URLSearchParams(window.location.search);
-    const team = params.get('team');
-    if (team) {
-        const selector = document.getElementById('team-context-selector');
-        if (selector) {
-            selector.value = team;
-            selectedTeam = team;
+    let team = params.get('team');
+
+    // If no team provided in URL, check persisted selection
+    if (!team) {
+        try {
+            team = localStorage.getItem('selectedTeam') || null;
+        } catch (e) {
+            console.warn('Could not read persisted selectedTeam:', e);
+            team = null;
         }
+    }
+
+    if (team) {
+        selectedTeam = team;
+        const selector = document.getElementById('team-context-selector');
+        if (selector) selector.value = team;
+        const displayEl = document.getElementById('selected-team-display');
+        if (displayEl) displayEl.textContent = team;
+        console.log(`[CHAT] Loaded selected team: ${team}`);
     }
 }
 
@@ -116,32 +170,98 @@ function initializeSuggestedQuestions() {
 /**
  * Send message
  */
-async function sendMessage(message) {
-    if (!message.trim()) return;
+async function sendMessage(messageParam) {
+    // Get message from parameter or input field
+    let message = messageParam;
+    if (!message) {
+        const input = document.getElementById('chat-input');
+        message = input ? input.value.trim() : '';
+    }
+    
+    if (!message) return;
+
+    console.log(`[CHAT] sendMessage called with: "${message}"`);
+    
+    // Get team from selector or persisted selection
+    const teamSelector = document.getElementById('team-context-selector');
+    const teamToSend = teamSelector ? (teamSelector.value || selectedTeam) : (selectedTeam || window.selectedTeam || null);
+    console.log(`[CHAT] Selected team: ${teamToSend || 'None'}`);
+    
+    // If no team selected at all, require selection first. Prefer modal if available.
+    if (!teamToSend) {
+        console.log('[CHAT] No team selected; prompting user to choose a team before sending');
+        const modal = document.getElementById('team-selector-modal');
+        if (modal && typeof modal.classList !== 'undefined') {
+            modal.classList.add('active');
+            // Avoid repeating identical system message multiple times
+            const last = chatContainerLastText();
+            if (last !== 'Please select a team before asking questions.') {
+                addMessageToChat('system', 'Please select a team before asking questions.');
+            }
+        } else if (teamSelector) {
+            // Focus the dropdown
+            teamSelector.focus();
+            const last = chatContainerLastText();
+            if (last !== 'Please select a team from the dropdown before asking questions.') {
+                addMessageToChat('system', 'Please select a team from the dropdown before asking questions.');
+            }
+        } else {
+            const last = chatContainerLastText();
+            if (last !== 'Please select a team before asking questions.') {
+                addMessageToChat('system', 'Please select a team before asking questions.');
+            }
+        }
+        return;
+    }
+
+    // Warn for gap-like queries (keeps previous behavior for extra clarity)
+    if (message.toLowerCase().includes('gap') || message.toLowerCase().includes('weak') || message.toLowerCase().includes('prefer')) {
+        console.log(`[CHAT] Gap/weak/preference keyword detected`);
+    }
 
     // Add user message to chat
+    console.log(`[CHAT] Adding user message to chat`);
     addMessageToChat('user', message);
 
     // Show typing indicator
+    console.log(`[CHAT] Showing typing indicator`);
     const typingId = showTypingIndicator();
 
+    // Clear input field if message came from input
+    const input = document.getElementById('chat-input');
+    if (input && !messageParam) {
+        input.value = '';
+    }
+
     try {
-        const response = await API.sendChatMessage(message, selectedTeam, null);
+        console.log(`[CHAT] Sending request with direct backend integration`);
+        
+        // Use direct backend integration instead of API wrapper
+        const response = await sendDirectChatRequest(message, teamToSend);
+        
+        console.log(`[CHAT] Response received:`, response);
         
         // Remove typing indicator
         removeTypingIndicator(typingId);
 
+        console.log(`[CHAT] Response source: ${response.source}`);
+
         // Add AI response to chat
-        addMessageToChat('assistant', response.response || response.message || 'No response received');
+        const responseText = response.response || 'No response received';
+        console.log(`[CHAT] Adding assistant message (${responseText.length} chars)`);
+        addMessageToChat('assistant', responseText);
 
         // Save to history
         chatHistory.push(
             { role: 'user', content: message },
-            { role: 'assistant', content: response.response || response.message || 'No response received' }
+            { role: 'assistant', content: responseText }
         );
         saveChatHistory();
+        console.log(`[CHAT] Message saved to history`);
     } catch (error) {
+        console.error(`[CHAT] Error caught:`, error);
         removeTypingIndicator(typingId);
+        console.error(`[CHAT] Adding error message`);
         addMessageToChat('error', `Error: ${error.message}`);
         showError(`Failed to send message: ${error.message}`);
     }
@@ -151,23 +271,32 @@ async function sendMessage(message) {
  * Add message to chat
  */
 function addMessageToChat(role, content) {
-    const chatContainer = document.getElementById('chat-messages');
-    if (!chatContainer) return;
+    const chatContainer = document.getElementById('chat-messages-area');
+    if (!chatContainer) {
+        console.error(`[CHAT] Chat container not found`);
+        return;
+    }
 
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message chat-message-${role}`;
     
     const timestamp = new Date().toLocaleTimeString();
     
-    messageDiv.innerHTML = `
-        <div class="message-content">
-            ${role === 'user' ? '<strong>You:</strong>' : role === 'assistant' ? '<strong>AI:</strong>' : ''}
-            ${content}
-        </div>
-        <div class="message-timestamp">${timestamp}</div>
-    `;
+    // For system messages, use simple format
+    if (role === 'system') {
+        messageDiv.innerHTML = content;
+        chatContainer.appendChild(messageDiv);
+    } else {
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                ${role === 'user' ? '<strong>You:</strong>' : role === 'assistant' ? '<strong>AI:</strong>' : ''}
+                ${content}
+            </div>
+            <div class="message-timestamp">${timestamp}</div>
+        `;
+        chatContainer.appendChild(messageDiv);
+    }
 
-    chatContainer.appendChild(messageDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
     // Add slide-in animation
@@ -177,10 +306,21 @@ function addMessageToChat(role, content) {
 }
 
 /**
+ * Helper: return last chat container text (simplified) to avoid duplicate system messages
+ */
+function chatContainerLastText() {
+    const chatContainer = document.getElementById('chat-messages-area');
+    if (!chatContainer) return null;
+    const last = chatContainer.lastElementChild;
+    if (!last) return null;
+    return last.textContent ? last.textContent.trim() : null;
+}
+
+/**
  * Display chat history
  */
 function displayChatHistory() {
-    const chatContainer = document.getElementById('chat-messages');
+    const chatContainer = document.getElementById('chat-messages-area');
     if (!chatContainer) return;
 
     chatContainer.innerHTML = '';
@@ -193,7 +333,7 @@ function displayChatHistory() {
  * Show typing indicator
  */
 function showTypingIndicator() {
-    const chatContainer = document.getElementById('chat-messages');
+    const chatContainer = document.getElementById('chat-messages-area');
     if (!chatContainer) return null;
 
     const typingDiv = document.createElement('div');

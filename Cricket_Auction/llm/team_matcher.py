@@ -5,7 +5,7 @@ from models.player import Player
 from models.team import Team
 from llm.gemini_client import GeminiClient
 from llm.prompt_loader import PromptLoader
-from core.bias_integrator import BiasIntegrator
+from core.bias_modeler import BiasModeler
 from core.team_requirements import TeamRequirementsGenerator
 from core.player_profile import PlayerProfileGenerator
 import json
@@ -15,10 +15,10 @@ import re
 class TeamMatcher:
     """Match players to teams using LLM reasoning."""
     
-    def __init__(self, gemini_client: GeminiClient, bias_integrator: BiasIntegrator):
+    def __init__(self, gemini_client: GeminiClient, bias_modeler: BiasModeler):
         """Initialize matcher."""
         self.client = gemini_client
-        self.bias_integrator = bias_integrator
+        self.bias_modeler = bias_modeler
         self.requirements_generator = TeamRequirementsGenerator()
         self.profile_generator = PlayerProfileGenerator()
         self.prompt_loader = PromptLoader()
@@ -73,6 +73,9 @@ Player Tags:
         prompt = f"""{system_context}
 
 === TEAM-PLAYER MATCHING TASK ===
+
+**CRITICAL**: This player IS AVAILABLE in the auction supply. Only evaluate THIS SPECIFIC PLAYER for THIS TEAM.
+Do NOT suggest any other players. Focus on assessing {player.name}'s fit for {team.name}'s requirements.
 
 Follow Step f) framework from the instructions above to compute demand score and price ranges.
 
@@ -177,8 +180,14 @@ Quality Tier: [A or B]
         # Get requirements
         requirements = self.requirements_generator.generate_requirements(team)
         
-        # Get bias context
-        bias_context = self.bias_integrator.get_bias_context_for_llm(player.name, team.name) if self.bias_integrator else ""
+        # Get bias info from BiasModeler (raw numeric score + reason). Do not apply hardcoded boosts here;
+        # include bias context for the LLM to use when computing demand.
+        bias_score = 0.0
+        bias_reason = ""
+        if self.bias_modeler:
+            bias_score = self.bias_modeler.get_bias_score(player.name, team.name)
+            bias_reason = self.bias_modeler.get_bias_reason(player.name, team.name)
+        bias_context = f"Bias Score: {bias_score:.3f}. Bias Reason: {bias_reason}" if bias_reason or bias_score else ""
         
         # Create prompt
         prompt = self.create_matching_prompt(player, team, requirements, bias_context)
@@ -191,21 +200,14 @@ Quality Tier: [A or B]
                 print(f"[TEAM_MATCHER] WARNING: Empty match result for {player.name} -> {team.name}")
                 match_result = {}
             
-            # Add bias boost to demand score
+            # Record bias info returned by BiasModeler; do NOT apply a fixed multiplier boost here.
             base_demand = match_result.get('overall_demand_score', 0)
-            if self.bias_integrator:
-                adjusted_demand = self.bias_integrator.add_bias_to_demand_score(
-                    base_demand,
-                    player.name,
-                    team.name
-                )
-                match_result['overall_demand_score'] = adjusted_demand
-                match_result['base_demand_score'] = base_demand
-                match_result['bias_boost'] = adjusted_demand - base_demand
-            else:
-                match_result['overall_demand_score'] = base_demand
-                match_result['base_demand_score'] = base_demand
-                match_result['bias_boost'] = 0
+            match_result['base_demand_score'] = base_demand
+            match_result['bias_score'] = bias_score
+            match_result['bias_reason'] = bias_reason
+            # Provide a numeric 'bias_boost' field equal to the bias score so downstream formatters
+            # can choose how to present it (no hardcoded adjustment here).
+            match_result['bias_boost'] = bias_score
             
             # Add metadata
             match_result['player_name'] = player.name

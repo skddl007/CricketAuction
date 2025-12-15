@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional
 from models.player import Player
 from models.team import Team
 from llm.team_matcher import TeamMatcher
-from core.bias_integrator import BiasIntegrator
+from core.bias_modeler import BiasModeler
 
 
 class Recommender:
@@ -14,9 +14,35 @@ class Recommender:
         """Initialize recommender."""
         self.team_matcher = team_matcher
     
-    def recommend_player(self, player: Player, teams: Dict[str, Team]) -> str:
-        """Generate recommendation string for a player."""
-        matches = self.team_matcher.match_player_to_all_teams(player, teams)
+    def recommend_player(
+        self,
+        player: Player,
+        teams: Optional[Dict[str, Team]] = None,
+        team: Optional[Team] = None,
+        max_teams: Optional[int] = None
+    ) -> str:
+        """
+        Generate recommendation string for a player.
+
+        By default this will generate recommendations across all teams when
+        `teams` is provided. If a specific `team` is provided, the method
+        will only generate recommendations for that single team.
+        
+        Args:
+            max_teams: Max teams to show (default: no limit, show all with demand >= 5)
+        """
+        if team is not None:
+            matches = [self.team_matcher.match_player_to_team(player, team)]
+        else:
+            if teams is None:
+                raise ValueError("Either 'teams' or 'team' must be provided to recommend_player")
+            matches = self.team_matcher.match_player_to_all_teams(player, teams)
+        
+        # Filter to teams with meaningful demand (>= 5.0) unless max_teams specified
+        if max_teams is None:
+            filtered_matches = [m for m in matches if m.get('overall_demand_score', 0) >= 5.0]
+        else:
+            filtered_matches = matches[:max_teams]
         
         # Format player info
         lines = [
@@ -56,32 +82,37 @@ class Recommender:
         
         lines.append("")
         
-        # Team recommendations
-        for match in matches[:5]:  # Top 5 teams
-            if match.get('error'):
-                continue
-            
-            team_name = match['team_name']
-            demand = match.get('overall_demand_score', 0)
-            fair_price = match.get('fair_price_range', 'N/A')
-            all_out_price = match.get('all_out_price_range', 'N/A')
-            gaps_filled = match.get('gaps_filled', [])
-            bias_boost = match.get('bias_boost', 0)
-            
-            # Format gaps
-            gaps_str = ", ".join(gaps_filled[:3]) if gaps_filled else "General fit"
-            
-            # Format bias
-            bias_str = ""
-            if bias_boost > 0.1:
-                bias_str = f" | Bias: +{bias_boost:.1f}"
-            
-            lines.append(
-                f"{team_name} – Demand {demand:.1f}/10 | "
-                f"Fair: {fair_price}Cr | "
-                f"All-out: {all_out_price}Cr | "
-                f"Fills: {gaps_str}{bias_str}"
-            )
+        # Team recommendations (filtered)
+        if not filtered_matches:
+            lines.append("No teams with demand >= 5.0")
+        else:
+            lines.append(f"Teams interested ({len(filtered_matches)}):")
+            lines.append("")
+            for match in filtered_matches:
+                if match.get('error'):
+                    continue
+                
+                team_name = match['team_name']
+                demand = match.get('overall_demand_score', 0)
+                fair_price = match.get('fair_price_range', 'N/A')
+                all_out_price = match.get('all_out_price_range', 'N/A')
+                gaps_filled = match.get('gaps_filled', [])
+                bias_boost = match.get('bias_boost', 0)
+                
+                # Format gaps
+                gaps_str = ", ".join(gaps_filled[:3]) if gaps_filled else "General fit"
+                
+                # Format bias
+                bias_str = ""
+                if bias_boost > 0.1:
+                    bias_str = f" | Bias: +{bias_boost:.1f}"
+                
+                lines.append(
+                    f"{team_name} – Demand {demand:.1f}/10 | "
+                    f"Fair: {fair_price}Cr | "
+                    f"All-out: {all_out_price}Cr | "
+                    f"Fills: {gaps_str}{bias_str}"
+                )
         
         return "\n".join(lines)
     
@@ -91,7 +122,7 @@ class Recommender:
         available_players: List[Player],
         limit: int = 10
     ) -> List[Dict[str, Any]]:
-        """Get recommendations for a specific team."""
+        """Get recommendations for a specific team (ONLY from available supply players)."""
         print(f"[RECOMMENDER] recommend_for_team called")
         print(f"[RECOMMENDER] Team: {team.name if team else 'None'}")
         print(f"[RECOMMENDER] Available players: {len(available_players)}")
@@ -101,6 +132,9 @@ class Recommender:
         if not self.team_matcher:
             print("[RECOMMENDER] ERROR: TeamMatcher is None!")
             return []
+        
+        # Create set of available player names for quick validation
+        available_player_names = {p.name for p in available_players}
         
         recommendations = []
         processed = 0
@@ -119,6 +153,12 @@ class Recommender:
                     if errors <= 3:  # Only log first few errors
                         print(f"[RECOMMENDER] Error matching {player.name}: {match_result.get('error')}")
                 else:
+                    # VALIDATION: Ensure recommended player is in available supply
+                    recommended_player_name = match_result.get('player_name', '')
+                    if recommended_player_name not in available_player_names:
+                        print(f"[RECOMMENDER] WARNING: {recommended_player_name} not in available supply! Skipping.")
+                        errors += 1
+                        continue
                     recommendations.append(match_result)
             except Exception as e:
                 errors += 1

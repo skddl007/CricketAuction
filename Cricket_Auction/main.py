@@ -16,7 +16,6 @@ from llm.gemini_client import GeminiClient
 from llm.player_tagger import PlayerTagger
 from llm.team_matcher import TeamMatcher
 from core.bias_modeler import BiasModeler
-from core.bias_integrator import BiasIntegrator
 from core.recommender import Recommender
 from core.player_grouper import PlayerGrouper
 from output.matrix_generator import MatrixGenerator
@@ -91,10 +90,11 @@ def initialize_system():
     
     # Initialize components
     bias_modeler = BiasModeler()
-    bias_integrator = BiasIntegrator(bias_modeler) if gemini_client else None
+    # BiasIntegrator removed per refactor: use BiasModeler directly and let LLM handle bias influence
+    bias_integrator = None
     
     player_tagger = PlayerTagger(gemini_client) if gemini_client else None
-    team_matcher = TeamMatcher(gemini_client, bias_integrator) if gemini_client and bias_integrator else None
+    team_matcher = TeamMatcher(gemini_client, bias_modeler) if gemini_client else None
     
     recommender = Recommender(team_matcher) if team_matcher else None
     player_grouper = PlayerGrouper(recommender) if recommender else None
@@ -137,7 +137,6 @@ def initialize_system():
         'state_manager': state_manager,
         'gemini_client': gemini_client,
         'bias_modeler': bias_modeler,
-        'bias_integrator': bias_integrator,
         'player_tagger': player_tagger,
         'team_matcher': team_matcher,
         'recommender': recommender,
@@ -220,26 +219,9 @@ def main():
         uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=False)
 
 
-# Expose FastAPI app for ASGI servers and initialize on startup
+# Expose FastAPI app for ASGI servers
+# (Initialization happens in api_handler.py via lifespan context manager)
 from handlers.api_handler import app as app
-
-
-@app.on_event("startup")
-async def _initialize_on_startup():
-    """Initialize system when ASGI server starts the app."""
-    try:
-        components = initialize_system()
-        from handlers.api_handler import initialize_handlers, set_components
-        initialize_handlers(
-            components['state_manager'],
-            components['recommender'],
-            components['player_grouper'],
-            components['matrix_generator']
-        )
-        set_components(components)
-    except Exception as e:
-        # Log any startup failure; raising will stop the ASGI server startup
-        print(f"Startup initialization failed: {e}")
 
 
 if __name__ == "__main__":

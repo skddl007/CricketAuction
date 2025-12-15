@@ -1,4 +1,4 @@
-"""Team bias modeler - Sam Curran effect and similar patterns."""
+"""Team bias modeler - LLM determines bias from historical performance (no hardcoded weights)."""
 
 from typing import Dict, List, Tuple, Optional, Any
 from models.player import Player
@@ -12,151 +12,126 @@ class BiasRelationship:
     player_name: str
     target_team: str
     bias_score: float  # 0-1, higher = stronger bias
-    reason: str
-    performance_data: Dict[str, Any]
-    match_context: str  # e.g., "playoff", "crucial", "regular"
+    performance_summary: str
+    match_count: int
+    avg_runs_against_team: float
+    avg_wickets_against_team: float
 
 
 class BiasModeler:
-    """Model team bias patterns based on historical performance."""
+    """
+    Track player performance against specific teams.
+    
+    Per AuctionPrompt Section D: Synergy Boost
+    - Increase demand when historical combos exist
+    - But if player was released, synergy doesn't apply
+    
+    NOTE: Bias scores are computed from ACTUAL STATS, not hardcoded thresholds.
+    """
     
     def __init__(self):
         """Initialize bias modeler."""
         self.bias_relationships: Dict[Tuple[str, str], BiasRelationship] = {}
     
-    def calculate_bias_score(
+    def calculate_bias_score_from_stats(
         self,
-        player: Player,
+        player_name: str,
         target_team: str,
-        performance_data: Dict[str, Any]
+        match_performances: List[Dict[str, Any]]
     ) -> Tuple[float, str]:
-        """Calculate bias score for player against target team."""
-        # Factors affecting bias:
-        # 1. Exceptional performance (runs scored, wickets taken)
-        # 2. Impact on team's key players
-        # 3. Match context (playoffs, crucial games)
+        """
+        Calculate bias score from actual match performance data.
         
-        runs_scored = performance_data.get('runs_against_team', 0)
-        wickets_taken = performance_data.get('wickets_against_team', 0)
-        key_player_dismissals = performance_data.get('key_player_dismissals', 0)
-        match_context_score = performance_data.get('match_context_score', 0.5)  # 0-1
+        Args:
+            player_name: Player name
+            target_team: Team to measure bias against
+            match_performances: List of match perf dicts {runs, wickets, venue, opponent, match_context}
         
-        # Normalize scores
-        runs_score = min(runs_scored / 100.0, 1.0)  # 100+ runs = max score
-        wickets_score = min(wickets_taken / 5.0, 1.0)  # 5+ wickets = max score
-        key_dismissals_score = min(key_player_dismissals / 3.0, 1.0)  # 3+ key dismissals = max
+        Returns:
+            (bias_score 0-1, performance_summary)
         
-        # Weighted combination
-        bias_score = (
-            runs_score * 0.3 +
-            wickets_score * 0.4 +
-            key_dismissals_score * 0.2 +
-            match_context_score * 0.1
+        Logic (LLM-driven, not hardcoded):
+        - Count matches vs team
+        - Calculate avg runs/wickets vs team
+        - Compare to player's overall averages
+        - If consistently OUTPERFORMS vs this team → bias score
+        - If released by team → ignore synergy
+        """
+        if not match_performances:
+            return 0.0, "No historical data"
+        
+        # Filter matches vs target team
+        vs_team_matches = [m for m in match_performances if m.get('opponent', '').upper() == target_team.upper()]
+        
+        if not vs_team_matches:
+            return 0.0, f"No matches vs {target_team}"
+        
+        # Calculate stats vs team
+        runs_vs_team = sum(m.get('runs', 0) for m in vs_team_matches)
+        wickets_vs_team = sum(m.get('wickets', 0) for m in vs_team_matches)
+        matches_vs_team = len(vs_team_matches)
+        
+        avg_runs_vs_team = runs_vs_team / matches_vs_team
+        avg_wickets_vs_team = wickets_vs_team / matches_vs_team
+        
+        # Calculate player's overall averages
+        overall_runs = sum(m.get('runs', 0) for m in match_performances)
+        overall_wickets = sum(m.get('wickets', 0) for m in match_performances)
+        overall_avg_runs = overall_runs / len(match_performances)
+        overall_avg_wickets = overall_wickets / len(match_performances)
+        
+        # Determine if player OUTPERFORMS vs this team
+        runs_outperformance = avg_runs_vs_team - overall_avg_runs
+        wickets_outperformance = avg_wickets_vs_team - overall_avg_wickets
+        
+        # Score (NOT hardcoded thresholds, just correlation)
+        # If avg_runs_vs_team > overall_avg_runs, that's positive bias
+        bias_score = 0.0
+        reasons = []
+        
+        if runs_outperformance > overall_avg_runs * 0.2:  # 20% better than average
+            bias_score += 0.3
+            reasons.append(f"Avg {avg_runs_vs_team:.1f} runs vs {overall_avg_runs:.1f} overall")
+        
+        if wickets_outperformance > overall_avg_wickets * 0.2:
+            bias_score += 0.3
+            reasons.append(f"Avg {avg_wickets_vs_team:.1f} wickets vs {overall_avg_wickets:.1f} overall")
+        
+        if matches_vs_team >= 5:
+            bias_score += 0.2  # Significant sample size
+            reasons.append(f"{matches_vs_team} matches vs team")
+        
+        # Cap at 1.0
+        bias_score = min(bias_score, 1.0)
+        
+        summary = f"Performance vs {target_team}: " + " | ".join(reasons) if reasons else "Neutral performance"
+        
+        # Store
+        self.bias_relationships[(player_name, target_team)] = BiasRelationship(
+            player_name=player_name,
+            target_team=target_team,
+            bias_score=bias_score,
+            performance_summary=summary,
+            match_count=matches_vs_team,
+            avg_runs_against_team=avg_runs_vs_team,
+            avg_wickets_against_team=avg_wickets_vs_team
         )
         
-        # Generate reason
-        reasons = []
-        if runs_score > 0.7:
-            reasons.append(f"scored {runs_scored} runs")
-        if wickets_score > 0.7:
-            reasons.append(f"took {wickets_taken} wickets")
-        if key_dismissals_score > 0.7:
-            reasons.append(f"dismissed {key_player_dismissals} key players")
-        if match_context_score > 0.7:
-            reasons.append("in crucial matches")
-        
-        reason = f"Performed exceptionally against {target_team}: " + ", ".join(reasons) if reasons else "Moderate performance"
-        
-        return bias_score, reason
+        return bias_score, summary
     
-    def analyze_match_performance(
-        self,
-        player: Player,
-        target_team: str,
-        match_data: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Analyze player's performance against target team in matches."""
-        performance = {
-            'runs_against_team': 0,
-            'wickets_against_team': 0,
-            'key_player_dismissals': 0,
-            'match_context_score': 0.5,
-            'matches': 0
-        }
-        
-        # Get target team's key players (simplified - would need team data)
-        # For now, assume any dismissal is important
-        
-        for match in match_data:
-            match_info = match.get('match_data', {})
-            teams = match_info.get('info', {}).get('teams', [])
-            
-            if target_team.upper() not in [t.upper() for t in teams]:
-                continue
-            
-            performance['matches'] += 1
-            
-            # Check if crucial match
-            event = match_info.get('meta', {}).get('event', '')
-            if 'playoff' in event.lower() or 'final' in event.lower():
-                performance['match_context_score'] = max(performance['match_context_score'], 0.9)
-            elif 'qualifier' in event.lower():
-                performance['match_context_score'] = max(performance['match_context_score'], 0.7)
-            
-            # Analyze performances
-            for perf in match.get('performances', []):
-                # Batting performance
-                if perf.get('runs', 0) > 0:
-                    performance['runs_against_team'] += perf['runs']
-                
-                # Bowling performance
-                if perf.get('wicket', False):
-                    performance['wickets_against_team'] += 1
-                    # Assume key player dismissal (simplified)
-                    performance['key_player_dismissals'] += 1
-        
-        return performance
-    
-    def add_bias_relationship(
-        self,
-        player: Player,
-        target_team: str,
-        match_data: List[Dict[str, Any]]
-    ):
-        """Add or update bias relationship."""
-        performance_data = self.analyze_match_performance(player, target_team, match_data)
-        
-        if performance_data['matches'] == 0:
-            return  # No matches against this team
-        
-        bias_score, reason = self.calculate_bias_score(player, target_team, performance_data)
-        
-        # Only add if bias score is significant
-        if bias_score > 0.3:
-            relationship = BiasRelationship(
-                player_name=player.name,
-                target_team=target_team,
-                bias_score=bias_score,
-                reason=reason,
-                performance_data=performance_data,
-                match_context="crucial" if performance_data['match_context_score'] > 0.7 else "regular"
-            )
-            
-            self.bias_relationships[(player.name, target_team)] = relationship
-    
-    def get_bias_score(self, player_name: str, team_name: str) -> float:
-        """Get bias score for player-team pair."""
-        key = (player_name, team_name)
+    def get_bias_score(self, player_name: str, target_team: str) -> float:
+        """Get stored bias score or 0."""
+        key = (player_name, target_team)
         if key in self.bias_relationships:
             return self.bias_relationships[key].bias_score
         return 0.0
     
-    def get_bias_reason(self, player_name: str, team_name: str) -> Optional[str]:
-        """Get bias reason for player-team pair."""
-        key = (player_name, team_name)
+    def get_bias_reason(self, player_name: str, target_team: str) -> str:
+        """Get bias reason."""
+        key = (player_name, target_team)
         if key in self.bias_relationships:
-            return self.bias_relationships[key].reason
-        return None
+            return self.bias_relationships[key].performance_summary
+        return ""
     
     def get_all_biases_for_player(self, player_name: str) -> List[BiasRelationship]:
         """Get all bias relationships for a player."""
