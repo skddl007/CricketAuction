@@ -97,7 +97,9 @@ def initialize_system():
     team_matcher = TeamMatcher(gemini_client, bias_modeler) if gemini_client else None
     
     recommender = Recommender(team_matcher) if team_matcher else None
-    player_grouper = PlayerGrouper(recommender) if recommender else None
+    # Always create a PlayerGrouper object; it can operate in a safe no-LLM mode
+    # (its methods already handle a missing recommender by returning empty groups).
+    player_grouper = PlayerGrouper(recommender)
     matrix_generator = MatrixGenerator(state_manager)
     
     # Initialize handlers
@@ -109,8 +111,11 @@ def initialize_system():
         player_tagger=player_tagger,
         tag_storage=tag_storage
     ) if matrix_generator else None
-    live_bid_handler = LiveBidHandler(state_manager, recommender, player_grouper) if recommender and player_grouper else None
-    team_selection_handler = TeamSelectionHandler(state_manager, recommender, player_grouper) if recommender and player_grouper else None
+    # Initialize handlers even when LLM-based recommender is unavailable so
+    # the API remains responsive; handlers will handle missing recommender
+    # gracefully via the PlayerGrouper/Recommender interfaces.
+    live_bid_handler = LiveBidHandler(state_manager, recommender, player_grouper)
+    team_selection_handler = TeamSelectionHandler(state_manager, recommender, player_grouper)
     
     print("\n" + "=" * 60)
     print("SYSTEM INITIALIZATION SUMMARY")

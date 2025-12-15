@@ -87,16 +87,19 @@ function selectGroup(group) {
 async function loadRecommendations(team) {
     showLoading();
     try {
-        const [groupA, groupB, groupC] = await Promise.all([
+        const [responseA, responseB, responseC] = await Promise.all([
             API.getTeamRecommendations(team, 'A'),
             API.getTeamRecommendations(team, 'B'),
             API.getTeamRecommendations(team, 'C')
         ]);
 
+        // Extract recommendations from each response
+        // The API returns {team, purse, slots, groups, formatted, gap_analysis}
+        // We need to extract the groups data
         allRecommendations = {
-            A: groupA || [],
-            B: groupB || [],
-            C: groupC || []
+            A: extractRecommendationsFromResponse(responseA, 'A'),
+            B: extractRecommendationsFromResponse(responseB, 'B'),
+            C: extractRecommendationsFromResponse(responseC, 'C')
         };
 
         displayRecommendations();
@@ -105,6 +108,34 @@ async function loadRecommendations(team) {
         hideLoading();
         showError(`Failed to load recommendations: ${error.message}`);
     }
+}
+
+/**
+ * Extract recommendations from API response
+ */
+function extractRecommendationsFromResponse(response, group) {
+    if (!response) return [];
+    
+    // If response is already an array (legacy format), return it
+    if (Array.isArray(response)) {
+        return response;
+    }
+    
+    // If response has groups object (new format), extract the group
+    if (response.groups && typeof response.groups === 'object') {
+        const groupData = response.groups[group];
+        if (Array.isArray(groupData)) {
+            return groupData;
+        }
+        return [];
+    }
+    
+    // If response itself is a single group recommendation, return as array
+    if (response.player_name) {
+        return [response];
+    }
+    
+    return [];
 }
 
 /**
@@ -157,18 +188,18 @@ function renderRecommendationsGrid(recommendations) {
     let html = '<div class="recommendations-grid">';
     recommendations.forEach(player => {
         html += `
-            <div class="recommendation-card card" onclick="openPlayerModal('${player.name || ''}')">
-                <h3>${player.name || 'Unknown'}</h3>
+            <div class="recommendation-card card" onclick="openPlayerModal('${player.player_name || player.name || ''}')">
+                <h3>${player.player_name || player.name || 'Unknown'}</h3>
                 <div class="player-badges">
-                    <span class="badge badge-primary">${player.role || 'N/A'}</span>
+                    <span class="badge badge-primary">${player.primary_role || player.role || 'N/A'}</span>
                     <span class="badge badge-secondary">${player.speciality || 'N/A'}</span>
                 </div>
                 <div class="player-stats">
-                    ${player.match_score ? `<div class="stat"><strong>Match Score:</strong> ${player.match_score.toFixed(2)}</div>` : ''}
-                    ${player.price_estimate ? `<div class="stat"><strong>Price Estimate:</strong> ${formatCurrency(player.price_estimate)}</div>` : ''}
-                    ${player.quality ? `<div class="stat"><strong>Quality:</strong> ${player.quality}</div>` : ''}
+                    ${player.overall_demand_score ? `<div class="stat"><strong>Demand Score:</strong> ${player.overall_demand_score.toFixed(1)}/10</div>` : ''}
+                    ${player.fair_price_range ? `<div class="stat"><strong>Fair Price:</strong> ${player.fair_price_range}Cr</div>` : ''}
+                    ${player.quality ? `<div class="stat"><strong>Quality:</strong> Tier ${player.quality}</div>` : ''}
                 </div>
-                ${player.reason ? `<div class="recommendation-reason">${player.reason}</div>` : ''}
+                ${player.gaps_filled && player.gaps_filled.length > 0 ? `<div class="recommendation-reason">Fills: ${player.gaps_filled.slice(0, 2).join(', ')}</div>` : ''}
             </div>
         `;
     });

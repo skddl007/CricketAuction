@@ -301,9 +301,150 @@ a:hover {
 .hidden { display: none; }
 .visible { display: block; }
 
-/* Team Colors */
-.team-csk { color: #FFFF00; }
-.team-rcb { color: #EC1C24; }
+/* Matrix Display */
+.matrix-container {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+    box-shadow: var(--shadow-sm);
+}
+
+.matrix-text {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background-color: #F9F9F9;
+    padding: 16px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+}
+
+.matrix-table th {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+}
+
+.matrix-table td {
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+}
+
+.matrix-table tbody tr:nth-child(even) {
+    background-color: #FAFAFA;
+}
+
+.matrix-cell {
+    text-align: center;
+}
+
+.matrix-cell.filled {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.matrix-cell.empty {
+    background-color: #E8E8E8;
+}
+
+/* Weak Points Display */
+.weak-points-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.weak-point-item {
+    background: #FFF9F0;
+    border: 1px solid #FFE0B2;
+    border-radius: 8px;
+    padding: 12px 16px;
+    border-left: 4px solid var(--warning-color);
+}
+
+.weak-point-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.weak-point-category {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.weak-point-text {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* Live Recommendations Group Sections */
+.group-section {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.group-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.group-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 8px;
+    padding-left: 8px;
+    border-left: 3px solid var(--primary-color);
+}
+
+.recommendation-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.recommendation-item h4 {
+    margin: 0 0 8px 0;
+    font-size: 15px;
+    color: var(--text-primary);
+}
+
+.recommendation-item .player-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.match-score, .price-range {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: #F5F5F5;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
 .team-mi { color: #004BA0; }
 .team-kkr { color: #3A225D; }
 .team-dc { color: #007AFF; }

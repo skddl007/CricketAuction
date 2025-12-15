@@ -15,15 +15,18 @@ class APIError extends Error {
 }
 
 /**
- * Main API fetch wrapper
+ * Main API fetch wrapper with retry logic and CORS handling
  */
 async function apiFetch(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
     const config = {
+        method: options.method || 'GET',
         headers: {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
             ...options.headers
         },
+        credentials: 'omit',  // Don't send credentials for CORS preflight
         ...options
     };
 
@@ -31,38 +34,85 @@ async function apiFetch(endpoint, options = {}) {
         config.body = JSON.stringify(config.body);
     }
 
-    console.log(`[API] ${config.method || 'GET'} ${url}`);
+    console.log(`[API] ${config.method} ${url}`);
     if (config.body) {
         console.log(`[API] Request body:`, config.body);
     }
 
+    const maxRetries = 3;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[API] Attempt ${attempt}/${maxRetries}`);
+            
+            const response = await fetch(url, config);
+            console.log(`[API] Response status: ${response.status}`);
+            
+            let data;
+            const contentType = response.headers.get('content-type');
+            
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                data = { message: await response.text() };
+            }
+            
+            console.log(`[API] Response data:`, data);
+
+            if (!response.ok) {
+                console.error(`[API] Error response:`, data);
+                throw new APIError(
+                    data.detail || data.message || `HTTP error! status: ${response.status}`,
+                    response.status,
+                    data
+                );
+            }
+
+            return data;
+        } catch (error) {
+            lastError = error;
+            console.error(`[API] Attempt ${attempt} failed:`, error.message);
+            
+            // Don't retry on 4xx errors (client errors)
+            if (error instanceof APIError && error.status >= 400 && error.status < 500) {
+                throw error;
+            }
+            
+            // Retry on network errors or 5xx errors
+            if (attempt < maxRetries) {
+                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                console.log(`[API] Retrying after ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    // All retries failed
+    if (lastError instanceof APIError) {
+        throw lastError;
+    }
+    
+    throw new APIError(
+        `Network error after ${maxRetries} attempts: ${lastError.message}`,
+        0,
+        null
+    );
+}
+
+/**
+ * Check if API server is available
+ */
+async function checkAPIHealth() {
     try {
-        const response = await fetch(url, config);
-        console.log(`[API] Response status: ${response.status}`);
-        
-        const data = await response.json();
-        console.log(`[API] Response data:`, data);
-
-        if (!response.ok) {
-            console.error(`[API] Error response:`, data);
-            throw new APIError(
-                data.detail || `HTTP error! status: ${response.status}`,
-                response.status,
-                data
-            );
-        }
-
-        return data;
+        const response = await fetch(`${API_BASE_URL}/docs`, { 
+            method: 'HEAD',
+            credentials: 'omit'
+        });
+        return response.ok || response.status === 405;  // 405 for HEAD not allowed is still OK
     } catch (error) {
-        console.error(`[API] Fetch error:`, error);
-        if (error instanceof APIError) {
-            throw error;
-        }
-        throw new APIError(
-            `Network error: ${error.message}`,
-            0,
-            null
-        );
+        console.error('[API] Health check failed:', error);
+        return false;
     }
 }
 
@@ -70,6 +120,9 @@ async function apiFetch(endpoint, options = {}) {
  * API Methods
  */
 const API = {
+    // Check server health
+    checkHealth: () => checkAPIHealth(),
+
     // Get current auction state
     getState: () => apiFetch('/state'),
 
@@ -98,6 +151,7 @@ const API = {
             method: 'POST',
             body: { message, team_name: teamName, context }
         })
+
 };
 
 /**
@@ -106,7 +160,14 @@ const API = {
 function showError(message, duration = 5000) {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'error-notification';
-    errorDiv.textContent = message;
+    
+    // Support both plain text and HTML content
+    if (message.includes('<')) {
+        errorDiv.innerHTML = message;
+    } else {
+        errorDiv.textContent = message;
+    }
+    
     errorDiv.style.cssText = `
         position: fixed;
         top: 20px;
@@ -118,6 +179,8 @@ function showError(message, duration = 5000) {
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         z-index: 10000;
         animation: slideInRight 0.3s ease-out;
+        max-width: 400px;
+        line-height: 1.5;
     `;
     document.body.appendChild(errorDiv);
 

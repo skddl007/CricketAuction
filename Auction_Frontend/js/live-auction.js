@@ -79,15 +79,18 @@ function displayAuctionStatus(state) {
     const container = document.getElementById('auction-status');
     if (!container) return;
 
+    // state.teams is an object, not an array - count keys for team count
+    const teamsCount = state.teams ? Object.keys(state.teams).length : 0;
+    
     container.innerHTML = `
         <div class="status-grid">
             <div class="status-card card">
                 <div class="status-label">Available Players</div>
-                <div class="status-value">${state.available_players_count || 0}</div>
+                <div class="status-value">${state.supply_count || state.available_players_count || 0}</div>
             </div>
             <div class="status-card card">
                 <div class="status-label">Sold Players</div>
-                <div class="status-value">${state.sold_players_count || 0}</div>
+                <div class="status-value">${state.sold_count || state.sold_players_count || 0}</div>
             </div>
             <div class="status-card card">
                 <div class="status-label">Supply Count</div>
@@ -95,7 +98,7 @@ function displayAuctionStatus(state) {
             </div>
             <div class="status-card card">
                 <div class="status-label">Total Teams</div>
-                <div class="status-value">${state.teams?.length || 0}</div>
+                <div class="status-value">${teamsCount}</div>
             </div>
         </div>
     `;
@@ -112,7 +115,9 @@ function displayAuctionStatus(state) {
  */
 async function loadLiveRecommendations() {
     try {
-        const recommendations = await API.getLiveRecommendations();
+        const response = await API.getLiveRecommendations();
+        // API returns { recommendations: { teamName: { A: [...], B: [...], C: [...] } } }
+        const recommendations = response?.recommendations || response || {};
         displayLiveRecommendations(recommendations);
     } catch (error) {
         const container = document.getElementById('live-recommendations');
@@ -137,7 +142,7 @@ function displayLiveRecommendations(recommendations) {
     let html = '<div class="accordion-group">';
     
     Object.keys(recommendations).forEach(team => {
-        const teamRecs = recommendations[team];
+        const teamGroups = recommendations[team];
         html += `
             <div class="accordion">
                 <div class="accordion-header">
@@ -146,7 +151,7 @@ function displayLiveRecommendations(recommendations) {
                 </div>
                 <div class="accordion-content">
                     <div class="recommendations-list">
-                        ${renderTeamRecommendations(teamRecs)}
+                        ${renderTeamRecommendations(teamGroups)}
                     </div>
                 </div>
             </div>
@@ -162,21 +167,83 @@ function displayLiveRecommendations(recommendations) {
 
 /**
  * Render team recommendations
+ * @param {Object|Array} teamData - Either an object with groups {A: [], B: [], C: []} or an array of players
  */
-function renderTeamRecommendations(recs) {
-    if (!recs || recs.length === 0) {
+function renderTeamRecommendations(teamData) {
+    // Handle case where teamData is null/undefined
+    if (!teamData) {
         return '<p>No recommendations for this team.</p>';
     }
+    
+    // If teamData is already an array (legacy format), use it directly
+    if (Array.isArray(teamData)) {
+        return renderPlayerList(teamData);
+    }
+    
+    // If teamData is an object with groups (A, B, C), flatten or render by group
+    if (typeof teamData === 'object') {
+        const groupA = teamData.A || teamData.a || [];
+        const groupB = teamData.B || teamData.b || [];
+        const groupC = teamData.C || teamData.c || [];
+        
+        // Check if all groups are empty
+        if (groupA.length === 0 && groupB.length === 0 && groupC.length === 0) {
+            return '<p>No recommendations for this team.</p>';
+        }
+        
+        let html = '';
+        
+        // Render Group A
+        if (groupA.length > 0) {
+            html += '<div class="group-section"><h4 class="group-title">Group A - Critical</h4>';
+            html += renderPlayerList(groupA);
+            html += '</div>';
+        }
+        
+        // Render Group B
+        if (groupB.length > 0) {
+            html += '<div class="group-section"><h4 class="group-title">Group B - High Priority</h4>';
+            html += renderPlayerList(groupB);
+            html += '</div>';
+        }
+        
+        // Render Group C
+        if (groupC.length > 0) {
+            html += '<div class="group-section"><h4 class="group-title">Group C - Backup</h4>';
+            html += renderPlayerList(groupC);
+            html += '</div>';
+        }
+        
+        return html;
+    }
+    
+    return '<p>No recommendations for this team.</p>';
+}
 
+/**
+ * Render a list of players
+ */
+function renderPlayerList(players) {
+    if (!Array.isArray(players) || players.length === 0) {
+        return '';
+    }
+    
     let html = '';
-    recs.forEach(player => {
+    players.forEach(player => {
+        const playerName = player.player_name || player.name || 'Unknown';
+        const role = player.primary_role || player.role || 'N/A';
+        const speciality = player.speciality || 'N/A';
+        const demandScore = player.overall_demand_score;
+        const fairPrice = player.fair_price_range;
+        
         html += `
             <div class="recommendation-item card">
-                <h4>${player.name || 'Unknown'}</h4>
+                <h4>${playerName}</h4>
                 <div class="player-info">
-                    <span class="badge badge-primary">${player.role || 'N/A'}</span>
-                    <span class="badge badge-secondary">${player.speciality || 'N/A'}</span>
-                    ${player.match_score ? `<span class="match-score">Score: ${player.match_score.toFixed(2)}</span>` : ''}
+                    <span class="badge badge-primary">${role}</span>
+                    <span class="badge badge-secondary">${speciality}</span>
+                    ${demandScore ? `<span class="match-score">Demand: ${demandScore.toFixed(1)}/10</span>` : ''}
+                    ${fairPrice ? `<span class="price-range">Fair: ${fairPrice}Cr</span>` : ''}
                 </div>
             </div>
         `;

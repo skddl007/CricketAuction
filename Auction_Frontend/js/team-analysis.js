@@ -10,9 +10,43 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeTeamSelector();
     loadTeamFromURL();
     if (currentTeam) {
-        loadTeamData(currentTeam);
+        // Check server health before loading data
+        checkServerAndLoadData();
     }
 });
+
+/**
+ * Check if server is available before loading data
+ */
+async function checkServerAndLoadData() {
+    try {
+        console.log('[Team Analysis] Checking server health...');
+        const isHealthy = await API.checkHealth();
+        
+        if (!isHealthy) {
+            showError(
+                'Server is not responding. Please ensure:<br>' +
+                '1. Backend server is running on http://127.0.0.1:8000<br>' +
+                '2. Run: <code>python main.py</code> from Cricket_Auction directory<br>' +
+                '3. Or run: <code>uvicorn main:app --host 127.0.0.1 --port 8000</code>'
+            );
+            return;
+        }
+        
+        console.log('[Team Analysis] Server is healthy, loading team data...');
+        loadTeamData(currentTeam);
+    } catch (error) {
+        console.error('[Team Analysis] Error checking server:', error);
+        showError(
+            'Failed to connect to backend server<br>' +
+            'Error: ' + error.message + '<br><br>' +
+            'Please ensure the backend server is running:<br>' +
+            '1. Open terminal in Cricket_Auction directory<br>' +
+            '2. Run: <code>python main.py</code><br>' +
+            '3. Or: <code>uvicorn main:app --host 127.0.0.1 --port 8000</code>'
+        );
+    }
+}
 
 /**
  * Initialize team selector
@@ -60,7 +94,7 @@ function selectTeam(team) {
     window.history.pushState({}, '', `?team=${team}`);
 
     // Load team data
-    loadTeamData(team);
+    checkServerAndLoadData();
 }
 
 /**
@@ -69,6 +103,8 @@ function selectTeam(team) {
 async function loadTeamData(team) {
     showLoading();
     try {
+        console.log('[Team Analysis] Loading data for team:', team);
+        
         const [state, gaps, weakPoints, matrix] = await Promise.all([
             API.getState(),
             API.getTeamGaps(team),
@@ -76,6 +112,7 @@ async function loadTeamData(team) {
             API.getTeamMatrix(team)
         ]);
 
+        console.log('[Team Analysis] Data loaded successfully');
         displayTeamOverview(team, state);
         displayGapAnalysis(gaps);
         displayWeakPoints(weakPoints);
@@ -85,7 +122,21 @@ async function loadTeamData(team) {
         hideLoading();
     } catch (error) {
         hideLoading();
-        showError(`Failed to load team data: ${error.message}`);
+        console.error('[Team Analysis] Load error:', error);
+        
+        let errorMessage = error.message;
+        if (error instanceof APIError && error.data) {
+            errorMessage = error.data.detail || error.data.message || error.message;
+        }
+        
+        showError(
+            `Failed to load team data for ${team}:<br>` +
+            `<strong>${errorMessage}</strong><br><br>` +
+            'Troubleshooting:<br>' +
+            '1. Verify backend server is running<br>' +
+            '2. Check console for detailed error messages<br>' +
+            '3. Ensure data files exist in Cricket_Auction/Data/ directory'
+        );
     }
 }
 
@@ -93,26 +144,38 @@ async function loadTeamData(team) {
  * Display team overview
  */
 function displayTeamOverview(team, state) {
-    const teamData = state.teams?.find(t => t.name === team);
-    if (!teamData) return;
+    // state.teams is an object with team names as keys, not an array
+    const teamData = state.teams?.[team];
+    if (!teamData) {
+        console.warn(`[Team Analysis] Team data not found for: ${team}`);
+        return;
+    }
 
     const overview = document.getElementById('team-overview');
     if (overview) {
+        // Calculate slots available from total_slots and squad size
+        const squadSize = teamData.squad?.length || 0;
+        const slotsAvailable = (teamData.total_slots || 25) - squadSize;
+        
         overview.innerHTML = `
             <div class="overview-card">
-                <h3>Team: ${team}</h3>
+                <h3>Team: ${teamData.name || team}</h3>
                 <div class="overview-stats">
                     <div class="stat-item">
                         <span class="stat-label">Purse Remaining:</span>
-                        <span class="stat-value">${formatCurrency(teamData.purse_remaining || 0)}</span>
+                        <span class="stat-value">${formatCurrency(teamData.purse_available || teamData.purse_remaining || 0)}</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Slots Available:</span>
-                        <span class="stat-value">${teamData.slots_available || 0}</span>
+                        <span class="stat-value">${slotsAvailable}</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Players Bought:</span>
-                        <span class="stat-value">${teamData.players_bought || 0}</span>
+                        <span class="stat-label">Players in Squad:</span>
+                        <span class="stat-value">${squadSize}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Home Ground:</span>
+                        <span class="stat-value">${teamData.home_ground || 'N/A'}</span>
                     </div>
                 </div>
             </div>
@@ -171,9 +234,21 @@ function displayGapAnalysis(gaps) {
 /**
  * Display weak points
  */
-function displayWeakPoints(weakPoints) {
+function displayWeakPoints(weakPointsResponse) {
     const container = document.getElementById('weak-points');
     if (!container) return;
+
+    // API returns an object with weak_points array, batting_order_gaps, bowling_phase_gaps
+    // Extract the weak_points array from the response
+    let weakPoints = [];
+    
+    if (Array.isArray(weakPointsResponse)) {
+        // Legacy format: direct array
+        weakPoints = weakPointsResponse;
+    } else if (weakPointsResponse && typeof weakPointsResponse === 'object') {
+        // New format: object with weak_points property
+        weakPoints = weakPointsResponse.weak_points || [];
+    }
 
     if (!weakPoints || weakPoints.length === 0) {
         container.innerHTML = '<p>No weak points identified.</p>';
@@ -182,11 +257,30 @@ function displayWeakPoints(weakPoints) {
 
     let html = '<div class="weak-points-list">';
     weakPoints.forEach(point => {
-        html += `
-            <div class="weak-point-item">
-                <span class="weak-point-text">${point}</span>
-            </div>
-        `;
+        // Handle both string and object formats
+        if (typeof point === 'string') {
+            html += `
+                <div class="weak-point-item">
+                    <span class="weak-point-text">${escapeHtml(point)}</span>
+                </div>
+            `;
+        } else if (typeof point === 'object') {
+            // Object format: { category, severity, details }
+            const category = point.category || 'Unknown';
+            const severity = point.severity || 'Medium';
+            const details = point.details || 'No details';
+            const severityClass = getSeverityClass(severity);
+            
+            html += `
+                <div class="weak-point-item">
+                    <div class="weak-point-header">
+                        <span class="weak-point-category">${escapeHtml(category)}</span>
+                        <span class="badge badge-${severityClass}">${severity}</span>
+                    </div>
+                    <span class="weak-point-text">${escapeHtml(details)}</span>
+                </div>
+            `;
+        }
     });
     html += '</div>';
     container.innerHTML = html;
@@ -199,41 +293,67 @@ function displayTeamMatrix(matrix) {
     const container = document.getElementById('team-matrix');
     if (!container) return;
 
-    if (!matrix || !matrix.matrix) {
+    if (!matrix) {
         container.innerHTML = '<p>Matrix data not available.</p>';
         return;
     }
 
-    const matrixData = matrix.matrix;
-    let html = '<div class="matrix-container"><table class="matrix-table">';
-
-    // Header row
-    html += '<thead><tr><th>Role</th>';
-    if (matrixData[0]) {
-        Object.keys(matrixData[0]).forEach(key => {
-            if (key !== 'role') {
-                html += `<th>${key}</th>`;
-            }
-        });
+    // Handle new format: matrix is a text string
+    if (matrix.matrix && typeof matrix.matrix === 'string') {
+        const matrixText = matrix.matrix;
+        const html = `
+            <div class="matrix-container">
+                <pre class="matrix-text">${escapeHtml(matrixText)}</pre>
+            </div>
+        `;
+        container.innerHTML = html;
+        return;
     }
-    html += '</tr></thead><tbody>';
 
-    // Data rows
-    matrixData.forEach(row => {
-        html += '<tr>';
-        html += `<td class="matrix-role">${row.role || ''}</td>`;
-        Object.keys(row).forEach(key => {
-            if (key !== 'role') {
-                const value = row[key];
-                const cellClass = value ? 'matrix-cell filled' : 'matrix-cell empty';
-                html += `<td class="${cellClass}" title="${value || 'Empty'}">${value || '-'}</td>`;
-            }
+    // Legacy format: matrix is an array of objects (if still used)
+    if (Array.isArray(matrix)) {
+        let html = '<div class="matrix-container"><table class="matrix-table">';
+
+        // Header row
+        html += '<thead><tr><th>Role</th>';
+        if (matrix[0]) {
+            Object.keys(matrix[0]).forEach(key => {
+                if (key !== 'role') {
+                    html += `<th>${key}</th>`;
+                }
+            });
+        }
+        html += '</tr></thead><tbody>';
+
+        // Data rows
+        matrix.forEach(row => {
+            html += '<tr>';
+            Object.values(row).forEach(value => {
+                html += `<td>${value}</td>`;
+            });
+            html += '</tr>';
         });
-        html += '</tr>';
-    });
 
-    html += '</tbody></table></div>';
-    container.innerHTML = html;
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+        return;
+    }
+
+    container.innerHTML = '<p>Unable to parse matrix data.</p>';
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
 }
 
 /**
@@ -244,11 +364,16 @@ async function loadRecommendations(team) {
     if (!container) return;
 
     try {
-        const [groupA, groupB, groupC] = await Promise.all([
+        const [responseA, responseB, responseC] = await Promise.all([
             API.getTeamRecommendations(team, 'A'),
             API.getTeamRecommendations(team, 'B'),
             API.getTeamRecommendations(team, 'C')
         ]);
+
+        // Extract recommendations from responses
+        const groupA = extractRecommendationsFromResponse(responseA, 'A');
+        const groupB = extractRecommendationsFromResponse(responseB, 'B');
+        const groupC = extractRecommendationsFromResponse(responseC, 'C');
 
         // Initialize tabs
         initTabs('#recommendations');
@@ -282,6 +407,34 @@ async function loadRecommendations(team) {
 }
 
 /**
+ * Extract recommendations from API response
+ */
+function extractRecommendationsFromResponse(response, group) {
+    if (!response) return [];
+    
+    // If response is already an array (legacy format), return it
+    if (Array.isArray(response)) {
+        return response;
+    }
+    
+    // If response has groups object (new format), extract the group
+    if (response.groups && typeof response.groups === 'object') {
+        const groupData = response.groups[group];
+        if (Array.isArray(groupData)) {
+            return groupData;
+        }
+        return [];
+    }
+    
+    // If response itself is a single group recommendation, return as array
+    if (response.player_name) {
+        return [response];
+    }
+    
+    return [];
+}
+
+/**
  * Render recommendations list
  */
 function renderRecommendations(recommendations) {
@@ -293,12 +446,12 @@ function renderRecommendations(recommendations) {
     recommendations.forEach(player => {
         html += `
             <div class="recommendation-card card">
-                <h4>${player.name || 'Unknown'}</h4>
+                <h4>${player.player_name || player.name || 'Unknown'}</h4>
                 <div class="player-details">
-                    <p><strong>Role:</strong> ${player.role || 'N/A'}</p>
+                    <p><strong>Role:</strong> ${player.primary_role || player.role || 'N/A'}</p>
                     <p><strong>Speciality:</strong> ${player.speciality || 'N/A'}</p>
-                    <p><strong>Match Score:</strong> ${player.match_score?.toFixed(2) || 'N/A'}</p>
-                    ${player.price_estimate ? `<p><strong>Price Estimate:</strong> ${formatCurrency(player.price_estimate)}</p>` : ''}
+                    <p><strong>Demand Score:</strong> ${player.overall_demand_score?.toFixed(1) || 'N/A'}/10</p>
+                    ${player.fair_price_range ? `<p><strong>Fair Price:</strong> ${player.fair_price_range}Cr</p>` : ''}
                 </div>
             </div>
         `;

@@ -88,13 +88,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware to allow requests from file:// origin and other origins
+# Add CORS middleware to allow requests from all origins
+# This allows requests from file:// (null origin), localhost, and any other origin
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (including file://)
-    allow_credentials=False,  # Must be False when allow_origins=["*"]
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_origins=[
+        "*",  # Allow all origins
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "file://",
+        "null"  # file:// origin shows as "null"
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,
 )
 
 
@@ -156,16 +165,73 @@ async def sell_player(request: SellRequest):
 @app.get("/teams/{team}/matrix")
 async def get_team_matrix(team: str):
     """Get team matrix."""
+    print(f"\n[API] GET /teams/{team}/matrix")
+    
+    # Validate initialization
     if not matrix_generator:
-        raise HTTPException(status_code=500, detail="Matrix generator not initialized")
+        print(f"[API] ERROR: Matrix generator not initialized")
+        raise HTTPException(status_code=500, detail="Matrix generator not initialized. Server startup incomplete.")
     
-    team_name = normalize_team_name(team)
-    team_obj = state_manager.get_team(team_name) if state_manager else None
+    if not state_manager:
+        print(f"[API] ERROR: State manager not initialized")
+        raise HTTPException(status_code=500, detail="State manager not initialized. Server startup incomplete.")
     
-    if not team_obj:
-        raise HTTPException(status_code=404, detail=f"Team {team_name} not found")
+    try:
+        # Normalize and validate team name
+        team_name = normalize_team_name(team)
+        print(f"[API] Normalized team name: {team_name}")
+        
+        # Get team object
+        try:
+            team_obj = state_manager.get_team(team_name)
+        except Exception as e:
+            print(f"[API] ERROR getting team object: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Error retrieving team: {str(e)}")
+        
+        print(f"[API] Team found: {team_obj is not None}")
+        
+        if not team_obj:
+            available_teams = list(state_manager.get_all_teams().keys())
+            print(f"[API] ERROR: Team {team_name} not found. Available teams: {available_teams}")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Team '{team_name}' not found. Available teams: {', '.join(available_teams)}"
+            )
+        
+        # Generate matrix with detailed error handling
+        print(f"[API] Generating matrix for {team_name}...")
+        try:
+            matrix_text = matrix_generator.generate_team_matrix(team_obj)
+            if not matrix_text:
+                raise ValueError("Matrix generator returned empty result")
+            print(f"[API] Matrix generated successfully ({len(matrix_text)} chars)")
+            
+            return {
+                "success": True,
+                "matrix": matrix_text, 
+                "team": team_name
+            }
+        except Exception as e:
+            print(f"[API] ERROR in matrix generation: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Matrix generation failed: {type(e).__name__}: {str(e)}"
+            )
     
-    return {"matrix": matrix_generator.generate_team_matrix(team_obj)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] UNEXPECTED ERROR: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Unexpected error: {type(e).__name__}: {str(e)}"
+        )
 
 
 @app.get("/teams/{team}/recommendations")

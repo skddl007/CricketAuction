@@ -78,21 +78,28 @@ class MatrixGenerator:
             lines.append(f"  {i}. {player.name}")
         lines.append("")
         
-        # Gaps
+        # Gaps - using correct structure from identify_gaps
         gaps = self.playing11_analyzer.identify_gaps(team)
         lines.append("Identified Gaps:")
-        if gaps['batting_positions']['opener'] > 0:
-            lines.append(f"  - Missing {gaps['batting_positions']['opener']} opener(s)")
-        if gaps['speciality_roles']['wk'] > 0:
+        
+        role_gaps = gaps.get('role_gaps', {})
+        quality_gaps = gaps.get('quality_gaps', {})
+        
+        if role_gaps.get('opener', 0) > 0:
+            lines.append(f"  - Missing {role_gaps['opener']} opener(s)")
+        if role_gaps.get('wk', 0) > 0:
             lines.append(f"  - Missing wicket-keeper")
-        if gaps['bowling_phases']['death'] > 0:
-            lines.append(f"  - Missing death over bowler")
-        if gaps['bowling_phases']['powerplay'] > 0:
-            lines.append(f"  - Missing powerplay bowler")
-        if gaps['speciality_roles']['spinner'] > 0:
-            lines.append(f"  - Missing {gaps['speciality_roles']['spinner']} spinner(s)")
-        if gaps['speciality_roles']['pacer'] > 0:
-            lines.append(f"  - Missing {gaps['speciality_roles']['pacer']} pacer(s)")
+        if role_gaps.get('spinner', 0) > 0:
+            lines.append(f"  - Missing {role_gaps['spinner']} spinner(s)")
+        if role_gaps.get('pacer', 0) > 0:
+            lines.append(f"  - Missing {role_gaps['pacer']} pacer(s)")
+        if role_gaps.get('finisher', 0) > 0:
+            lines.append(f"  - Missing {role_gaps['finisher']} finisher(s)")
+        if quality_gaps.get('tier_a_needed', 0) > 0:
+            lines.append(f"  - Missing {quality_gaps['tier_a_needed']} Tier A player(s)")
+        
+        if gaps.get('total_gaps', 0) == 0:
+            lines.append("  - No critical gaps identified")
         
         return "\n".join(lines)
     
