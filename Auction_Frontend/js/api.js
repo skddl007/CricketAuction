@@ -3,7 +3,7 @@
  * Centralized fetch wrapper with error handling and loading states
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'https://cricketauction-1.onrender.com';
 
 class APIError extends Error {
     constructor(message, status, data) {
