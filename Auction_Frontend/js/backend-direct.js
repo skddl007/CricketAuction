@@ -3,7 +3,7 @@
  * This module directly calls the backend endpoints without going through the API layer
  */
 
-const BACKEND_API_URL = 'http://127.0.0.1:8000';
+const BACKEND_API_URL = 'https://cricketauction-1.onrender.com';
 
 // Check if backend is available on page load
 let backendAvailable = false;
